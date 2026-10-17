@@ -1,5 +1,6 @@
 //! Measure objects: page-space clicks, live readings and persistent drawing scales.
 use crate::{LeftPanel, PdfCraftApp, QuickTool, canvas::DocView, theme::Tokens, widgets};
+use crate::rfd;
 use egui::{Color32, Pos2, Stroke};
 use pdfcraft_engine::{
     Document, Edit, Style,

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::PdfCraftApp;
 use crate::widgets;
+use crate::{arboard, rfd};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ResolutionChoice {

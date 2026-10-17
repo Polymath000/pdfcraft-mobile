@@ -1,0 +1,57 @@
+[package]
+name = "pdfcraft-android"
+description = "PdfCraft Android mobile application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "pdfcraft_android"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+pdfcraft-ui-egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "glow", "persistence", "android-native-activity"] }
+egui = { workspace = true }
+log = { workspace = true }
+android_logger = "0.14"
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
+
+[package.metadata.android]
+package = "com.storytold.pdfcraft"
+app_name = "PdfCraft"
+label = "PdfCraft"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 35
+
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "pdfcraft"
+
+[package.metadata.android.application]
+label = "PdfCraft"
+theme = "@android:style/Theme.NoTitleBar.Fullscreen"
+request_legacy_external_storage = true
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.MANAGE_EXTERNAL_STORAGE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_EXTERNAL_STORAGE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.WRITE_EXTERNAL_STORAGE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_MEDIA_IMAGES"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"

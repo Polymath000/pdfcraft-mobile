@@ -97,6 +97,16 @@ mod page_selection_ui;
 mod pageboxes;
 mod palette;
 mod panels;
+pub mod layout_traits;
+pub mod mobile_file_picker;
+#[cfg(target_os = "android")]
+pub mod android_stubs;
+#[cfg(target_os = "android")]
+pub use android_stubs::{arboard, rfd};
+#[cfg(not(target_os = "android"))]
+pub use ::arboard;
+#[cfg(not(target_os = "android"))]
+pub use ::rfd;
 #[cfg(not(target_arch = "wasm32"))]
 mod pickers;
 pub mod prepare;
@@ -551,6 +561,7 @@ pub struct PdfCraftApp {
     /// Point size for new Fill & Sign text and dates, kept across launches.
     pub fill_text_size: f64,
     pub dialog: Option<Dialog>,
+    pub mobile_picker: Option<mobile_file_picker::MobileFilePicker>,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub update_source: Option<updates::UpdateSource>,
     pub(crate) updates: updates::Updates,
@@ -922,6 +933,7 @@ impl PdfCraftApp {
             flatten_fill_sign_on_save: false,
             fill_text_size: fill_sign::TEXT_SIZE,
             dialog: None,
+            mobile_picker: None,
             update_source: None,
             updates: updates::Updates::default(),
             printer_source: None,
@@ -1844,7 +1856,12 @@ impl PdfCraftApp {
 
     pub fn open_dialog(&mut self) {
         self.startup_superseded = true;
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(target_os = "android")]
+        {
+            self.mobile_picker = Some(mobile_file_picker::MobileFilePicker::new());
+            return;
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         self.pick(
             pickers::PickFor::Open,
             rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]).add_filter(tl!("Images and text (converted to PDF)"), &create_ui::CONVERTIBLE),
@@ -1919,6 +1936,7 @@ impl PdfCraftApp {
     /// on the document underneath it.
     pub(crate) fn modal_open(&self) -> bool {
         self.dialog.is_some()
+            || self.mobile_picker.is_some()
             || self.close_request.is_some()
             || self.password_prompt.is_some()
             || self.unlock_prompt.is_some()
@@ -3118,6 +3136,7 @@ impl eframe::App for PdfCraftApp {
         if self.draws_window_frame() {
             window_controls::resize_edges(&ctx);
         }
+        let t = theme::Tokens::get(&ctx);
         chrome::tab_strip(self, ui);
         chrome::mode_bar(self, ui);
         if self.active.is_some() {
@@ -3126,15 +3145,43 @@ impl eframe::App for PdfCraftApp {
             // there, so its buttons (Bookmarks, Page thumbnails, ...) must open their panels.
             // Outside Read mode the docking workspace draws the inspector.
             if self.mode == Mode::Read && self.right.is_some() {
-                egui::Panel::right("read_right_panel")
-                    .resizable(true)
-                    .default_size(330.0)
-                    .size_range(260.0..=520.0)
-                    .frame(egui::Frame::NONE)
-                    .show(ui, |ui| panels::right_panel(self, ui));
+                if crate::layout_traits::is_compact(ui) {
+                    let rect = ui.available_rect_before_wrap();
+                    let panel_w = rect.width().min(380.0);
+                    egui::Area::new(egui::Id::new("read_right_panel_compact"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(egui::pos2(rect.right() - panel_w, rect.top()))
+                        .show(ui.ctx(), |ui| {
+                            egui::Frame::NONE
+                                .fill(t.chrome)
+                                .stroke(egui::Stroke::new(1.0, t.divider))
+                                .shadow(egui::Shadow { offset: [-4, 0], blur: 16, spread: 0, color: egui::Color32::from_black_alpha(80) })
+                                .inner_margin(egui::Margin::same(8))
+                                .show(ui, |ui| {
+                                    ui.set_width(panel_w - 16.0);
+                                    ui.set_height(rect.height() - 16.0);
+                                    ui.horizontal(|ui| {
+                                        ui.heading(tl!("Navigation"));
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            if icons::button(ui, "x", 28.0, false, tl!("Close")).clicked() {
+                                                self.choose_right_panel(None);
+                                            }
+                                        });
+                                    });
+                                    ui.separator();
+                                    panels::right_panel(self, ui);
+                                });
+                        });
+                } else {
+                    egui::Panel::right("read_right_panel")
+                        .resizable(true)
+                        .default_size(330.0)
+                        .size_range(260.0..=520.0)
+                        .frame(egui::Frame::NONE)
+                        .show(ui, |ui| panels::right_panel(self, ui));
+                }
             }
         }
-        let t = theme::Tokens::get(&ctx);
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.pasteboard)).show(ui, |ui| {
             if self.mode == Mode::Read {
                 match self.active {

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use pdfcraft_engine::{DocId, Edit, SplitBy};
 
 use crate::PdfCraftApp;
+use crate::rfd;
 
 /// Why files were picked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

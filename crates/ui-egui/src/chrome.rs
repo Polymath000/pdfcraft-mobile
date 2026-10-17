@@ -66,11 +66,15 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     app.active = None;
                     app.combine_tab.focused = false;
                 }
-                // Keep the two icon buttons, Discord's text/padding and three gaps outside the scrolling tabs.
-                let controls_width = ui.fonts_mut(|f| f.layout_no_wrap("Discord".into(), theme::medium(13.0), t.text).size().x)
-                    + 2.0 * button
-                    + 50.0
-                    + window_controls::width(&controls.right);
+                let compact = crate::layout_traits::is_compact(ui);
+                let controls_width = if compact {
+                    button + window_controls::width(&controls.right)
+                } else {
+                    ui.fonts_mut(|f| f.layout_no_wrap("Discord".into(), theme::medium(13.0), t.text).size().x)
+                        + 2.0 * button
+                        + 50.0
+                        + window_controls::width(&controls.right)
+                };
                 // Open stays in sight after the tabs: its icon, text and padding, and the gaps around it.
                 let open_width = ui.fonts_mut(|f| f.layout_no_wrap(tl!("Open").into(), theme::medium(13.0), t.text).size().x) + 38.0 + 12.0;
                 let mut tabs_width = (ui.available_width() - controls_width - open_width).max(0.0);
@@ -296,12 +300,14 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         });
                     }
                     egui::Popup::context_menu(&response).id(response.id.with("theme_menu")).show(|ui| appearance_menu(app, ui));
-                    if icons::button(ui, "circle-help", button, false, tl!("Keyboard shortcuts")).clicked() {
-                        app.dialog = Some(Dialog::Shortcuts);
-                    }
-                    // One click to the community, from anywhere in the app.
-                    if widgets::ghost_button_sized(ui, "messages-square", "Discord", tab_h).on_hover_text(pdfcraft_engine::links::DISCORD).clicked() {
-                        app.execute("help.discord");
+                    if !compact {
+                        if icons::button(ui, "circle-help", button, false, tl!("Keyboard shortcuts")).clicked() {
+                            app.dialog = Some(Dialog::Shortcuts);
+                        }
+                        // One click to the community, from anywhere in the app.
+                        if widgets::ghost_button_sized(ui, "messages-square", "Discord", tab_h).on_hover_text(pdfcraft_engine::links::DISCORD).clicked() {
+                            app.execute("help.discord");
+                        }
                     }
                 });
             });
@@ -490,47 +496,139 @@ fn tab(
 
 pub fn mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
+    let compact = crate::layout_traits::is_compact(ui);
     egui::Panel::top("mode_bar")
-        .exact_size(48.0)
-        .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(10, 0)).stroke(Stroke::new(1.0, t.divider)))
+        .exact_size(if compact { 44.0 } else { 48.0 })
+        .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(if compact { 6 } else { 10 }, 0)).stroke(Stroke::new(1.0, t.divider)))
         .show(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                main_menu(app, ui);
-                ui.add_space(6.0);
-                ui.painter().vline(ui.cursor().left(), ui.max_rect().y_range().shrink(12.0), Stroke::new(1.0, t.divider));
-                ui.add_space(10.0);
-                for (mode, label) in
-                    [(Mode::AllTools, "All tools"), (Mode::Read, "Read"), (Mode::Edit, "Edit"), (Mode::Convert, "Convert"), (Mode::Sign, "E-Sign")]
-                {
-                    if widgets::mode_tab(ui, tl!(label), app.mode == mode).clicked() {
-                        app.switch_mode(mode, true);
-                    }
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    let has_doc = app.active.is_some();
-                    ui.add_enabled_ui(has_doc, |ui| {
-                        let tip = crate::commands::command_tip(ui.ctx(), tl!("Print ({key})"), "print.dialog");
-                        if icons::button(ui, "printer", 32.0, false, &tip).clicked() {
-                            app.run_command("print.dialog");
-                        }
-                        let tip = crate::commands::command_tip(ui.ctx(), tl!("Save ({key})"), "file.save");
-                        if icons::button(ui, "save", 32.0, false, &tip).clicked() {
-                            app.run_command("file.save");
-                        }
-                        let tip = crate::commands::command_tip(ui.ctx(), tl!("Document properties ({key})"), "file.properties");
-                        if icons::button(ui, "info", 32.0, false, &tip).clicked() {
-                            app.dialog = Some(Dialog::Properties(PropsTab::Description));
-                        }
-                    });
-                    ui.add_space(8.0);
-                    if widgets::search_box(ui, tl!("Find tools and commands"), 260.0).clicked() {
-                        app.palette_open = true;
-                    }
-                });
-            });
+            if compact {
+                compact_mode_bar(app, ui, &t);
+            } else {
+                desktop_mode_bar(app, ui, &t);
+            }
         });
+}
+
+fn compact_mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
+    ui.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        main_menu(app, ui);
+
+        let mode_label = match app.mode {
+            Mode::AllTools => tl!("Tools"),
+            Mode::Read => tl!("Read"),
+            Mode::Edit => tl!("Edit"),
+            Mode::Convert => tl!("Convert"),
+            Mode::Sign => tl!("E-Sign"),
+        };
+        let mode_btn = egui::Button::new(
+            egui::RichText::new(format!("{mode_label} ▾"))
+                .font(theme::medium(13.0))
+                .color(t.accent),
+        )
+        .corner_radius(CornerRadius::same(6))
+        .fill(t.hover);
+
+        let mode_resp = ui.add(mode_btn);
+        egui::Popup::menu(&mode_resp).show(|ui| {
+            ui.set_min_width(130.0);
+            for (m, lbl) in [
+                (Mode::Read, "Read"),
+                (Mode::Edit, "Edit"),
+                (Mode::AllTools, "All tools"),
+                (Mode::Convert, "Convert"),
+                (Mode::Sign, "E-Sign"),
+            ] {
+                if widgets::menu_item(ui, tl!(lbl), "").clicked() {
+                    app.switch_mode(m, true);
+                    ui.close();
+                }
+            }
+        });
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let has_doc = app.active.is_some();
+
+            let more_resp = icons::button(ui, "ellipsis-vertical", 32.0, false, tl!("More actions"));
+            egui::Popup::menu(&more_resp).show(|ui| {
+                ui.set_min_width(180.0);
+                if has_doc {
+                    if widgets::menu_item(ui, tl!("Save"), "").clicked() {
+                        app.run_command("file.save");
+                        ui.close();
+                    }
+                    if widgets::menu_item(ui, tl!("Print"), "").clicked() {
+                        app.run_command("print.dialog");
+                        ui.close();
+                    }
+                    if widgets::menu_item(ui, tl!("Document properties"), "").clicked() {
+                        app.dialog = Some(Dialog::Properties(PropsTab::Description));
+                        ui.close();
+                    }
+                    ui.separator();
+                }
+                if widgets::menu_item(ui, tl!("Find tools and commands"), "").clicked() {
+                    app.palette_open = true;
+                    ui.close();
+                }
+                if widgets::menu_item(ui, tl!("Preferences"), "").clicked() {
+                    app.dialog = Some(Dialog::Preferences);
+                    ui.close();
+                }
+            });
+
+            if has_doc {
+                let tip = crate::commands::command_tip(ui.ctx(), tl!("Save ({key})"), "file.save");
+                if icons::button(ui, "save", 32.0, false, &tip).clicked() {
+                    app.run_command("file.save");
+                }
+            }
+
+            if icons::button(ui, "search", 32.0, false, tl!("Find tools and commands")).clicked() {
+                app.palette_open = true;
+            }
+        });
+    });
+}
+
+fn desktop_mode_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
+    ui.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        main_menu(app, ui);
+        ui.add_space(6.0);
+        ui.painter().vline(ui.cursor().left(), ui.max_rect().y_range().shrink(12.0), Stroke::new(1.0, t.divider));
+        ui.add_space(10.0);
+        for (mode, label) in
+            [(Mode::AllTools, "All tools"), (Mode::Read, "Read"), (Mode::Edit, "Edit"), (Mode::Convert, "Convert"), (Mode::Sign, "E-Sign")]
+        {
+            if widgets::mode_tab(ui, tl!(label), app.mode == mode).clicked() {
+                app.switch_mode(mode, true);
+            }
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let has_doc = app.active.is_some();
+            ui.add_enabled_ui(has_doc, |ui| {
+                let tip = crate::commands::command_tip(ui.ctx(), tl!("Print ({key})"), "print.dialog");
+                if icons::button(ui, "printer", 32.0, false, &tip).clicked() {
+                    app.run_command("print.dialog");
+                }
+                let tip = crate::commands::command_tip(ui.ctx(), tl!("Save ({key})"), "file.save");
+                if icons::button(ui, "save", 32.0, false, &tip).clicked() {
+                    app.run_command("file.save");
+                }
+                let tip = crate::commands::command_tip(ui.ctx(), tl!("Document properties ({key})"), "file.properties");
+                if icons::button(ui, "info", 32.0, false, &tip).clicked() {
+                    app.dialog = Some(Dialog::Properties(PropsTab::Description));
+                }
+            });
+            ui.add_space(8.0);
+            if widgets::search_box(ui, tl!("Find tools and commands"), 260.0).clicked() {
+                app.palette_open = true;
+            }
+        });
+    });
 }
 
 fn main_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui) {

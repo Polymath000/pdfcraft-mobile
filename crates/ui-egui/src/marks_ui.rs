@@ -7,6 +7,7 @@ use pdfcraft_engine::{Background, Edit, HeaderFooter, MarkKind, Watermark};
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 /// How far a watermark may be moved from the page centre, in points.
 const MAX_OFFSET: f64 = 20_000.0;

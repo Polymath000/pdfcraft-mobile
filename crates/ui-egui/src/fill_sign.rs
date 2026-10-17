@@ -10,6 +10,7 @@ use pdfcraft_render::{DocInfo, PageInfo};
 
 use crate::canvas::{DocView, PageXform};
 use crate::theme::Tokens;
+use crate::rfd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FillTool {

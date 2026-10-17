@@ -13,6 +13,21 @@ pub fn show(app: &mut PdfCraftApp, ctx: &egui::Context) {
     dialogs(app, ctx);
     // Last, so it sits above Document Properties when Security's Unlock… asked for it.
     unlock(app, ctx);
+    mobile_file_picker(app, ctx);
+}
+
+fn mobile_file_picker(app: &mut PdfCraftApp, ctx: &egui::Context) {
+    if let Some(mut picker) = app.mobile_picker.take() {
+        let mut close = false;
+        if let Some(path) = picker.show(ctx, &mut close) {
+            app.open_path(&path.to_string_lossy());
+            ctx.request_repaint();
+        } else if close {
+            ctx.request_repaint();
+        } else {
+            app.mobile_picker = Some(picker);
+        }
+    }
 }
 
 fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {

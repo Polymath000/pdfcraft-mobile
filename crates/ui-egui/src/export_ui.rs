@@ -11,6 +11,7 @@ use pdfcraft_engine::export::{ExportSource, Exporter, ImageFormat};
 use crate::marks_ui::PageRange;
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExportKind {

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::theme::{self, Tokens};
 use crate::{Dialog, PdfCraftApp, QuickTool, widgets};
+use crate::rfd;
 
 /// Stamp files larger than this aren't kept in the library (it lives in the app's settings).
 pub const MAX_STAMP_BYTES: usize = 4 << 20;

@@ -8,6 +8,7 @@ use pdfcraft_engine::actions::{Action, Step, builtin};
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 /// The Action Wizard's state.
 #[derive(Clone, Debug, Default, PartialEq)]

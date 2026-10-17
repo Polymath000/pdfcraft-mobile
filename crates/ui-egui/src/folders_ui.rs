@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::SystemTime;
 
 use crate::PdfCraftApp;
+use crate::rfd;
 
 /// At most this many folders can be pinned.
 pub const MAX_PINNED: usize = 8;

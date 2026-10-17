@@ -12,6 +12,7 @@ use crate::canvas::{DocView, PageXform, Snapshot, SnapshotKind};
 use crate::fill_sign::SavedSig;
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, icons, widgets};
+use crate::rfd;
 
 /// A digital ID the app knows about (Acrobat: Digital ID files). The file stays where it is;
 /// its password is asked for at each signing.

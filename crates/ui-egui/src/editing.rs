@@ -5,6 +5,7 @@ use pdfcraft_engine::Edit;
 use pdfcraft_platform::staging::{StagingName, staging_suffixes};
 
 use crate::PdfCraftApp;
+use crate::rfd;
 
 /// What the user was doing when we asked whether to save.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

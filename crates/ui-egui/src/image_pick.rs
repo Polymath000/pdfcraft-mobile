@@ -6,6 +6,7 @@
 use egui::{Color32, CornerRadius, Pos2, Stroke};
 
 use crate::PdfCraftApp;
+use crate::arboard;
 use crate::canvas::{DocView, PageXform};
 use pdfcraft_render::DocInfo;
 

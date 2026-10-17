@@ -8,6 +8,7 @@ use pdfcraft_engine::{CommentProps, Edit, LineEnding, NoteIcon};
 use crate::comments::swatch_grid;
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropsTab {

@@ -32,11 +32,13 @@ use pdfcraft_engine::DocId;
 
 use crate::PdfCraftApp;
 use crate::files::{FilePurpose, PickTarget};
+use crate::rfd;
 
 /// What the chosen files are for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickFor {
     /// File ▸ Open: open the chosen file in a new tab.
+    #[allow(dead_code)]
     Open,
     /// Combine, insert, replace or OCR (see [`FilePurpose`]).
     Files(FilePurpose),

@@ -10,6 +10,7 @@ use pdfcraft_engine::ocr::{LANGUAGES, OcrPage, OcrSettings};
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 /// Which pages to read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

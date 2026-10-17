@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 
 use egui::FontData;
 
-#[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android"), not(target_arch = "wasm32")))]
 mod fontconfig;
 
 /// Larger files are not read: a font path is still untrusted input.
@@ -294,9 +294,9 @@ fn windows_fonts() -> PathBuf {
 }
 
 fn unix_fonts(files: &'static [&'static str]) -> Vec<PathBuf> {
-    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android"), not(target_arch = "wasm32")))]
     static INSTALLED: OnceLock<Vec<PathBuf>> = OnceLock::new();
-    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android"), not(target_arch = "wasm32")))]
     // Read once per process, and not at all when installed fonts are turned off.
     let installed = INSTALLED
         .get_or_init(|| {
@@ -306,7 +306,7 @@ fn unix_fonts(files: &'static [&'static str]) -> Vec<PathBuf> {
             fontconfig::font_files(&fontconfig::config_path())
         })
         .as_slice();
-    #[cfg(not(all(unix, not(target_os = "macos"), not(target_arch = "wasm32"))))]
+    #[cfg(not(all(unix, not(target_os = "macos"), not(target_os = "android"), not(target_arch = "wasm32"))))]
     let installed: &[PathBuf] = &[];
     unix_candidates(files, installed)
 }

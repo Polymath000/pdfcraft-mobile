@@ -8,6 +8,7 @@ use pdfcraft_engine::print::{self, Binding, BookletSubset, Content, Layout, Orie
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
+use crate::rfd;
 
 /// The preview pane, and the paper inside it (12 pt inset on each side).
 const PREVIEW_W: f32 = 320.0;

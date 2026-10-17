@@ -10,6 +10,7 @@ use pdfcraft_render::DocInfo;
 use crate::canvas::{DocView, PageXform};
 use crate::theme::Tokens;
 use crate::widgets;
+use crate::{arboard, rfd};
 
 /// The colour of the warning under text the standard fonts can't draw.
 pub(crate) const UNDRAWABLE: Color32 = Color32::from_rgb(0xD7, 0x37, 0x3F);

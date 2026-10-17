@@ -15,6 +15,7 @@ use pdfcraft_engine::SourceProblem;
 
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, icons, widgets};
+use crate::rfd;
 
 /// Same reds and ambers as the signature status (`sign_ui`).
 pub(crate) const ERROR: Color32 = Color32::from_rgb(0xD7, 0x37, 0x3F);
