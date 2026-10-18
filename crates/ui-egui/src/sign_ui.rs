@@ -1,6 +1,3 @@
-//! Use a certificate (execution plan M9.6): Digitally sign and Certify (drag a rectangle, or
-//! click an empty signature field), the Sign with a Digital ID / Configure New Digital ID /
-//! Sign as dialogs, the Signatures panel, and the signature message bar.
 
 use std::path::PathBuf;
 
@@ -14,8 +11,6 @@ use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, icons, widgets};
 use crate::rfd;
 
-/// A digital ID the app knows about (Acrobat: Digital ID files). The file stays where it is;
-/// its password is asked for at each signing.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DigitalIdEntry {
     pub path: String,
@@ -23,29 +18,22 @@ pub struct DigitalIdEntry {
     pub issuer: String,
     pub email: String,
     pub expires: String,
-    /// Why the ID can't sign (a Windows store certificate whose key PdfCraft can't use): shown
-    /// greyed with the reason, and never selectable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unusable: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SignStep {
-    /// Sign with a Digital ID: pick one.
     Choose,
-    /// Configure a Digital ID for signing: from a file or a new self-signed one.
     Configure,
-    /// Sign as "Name": appearance, password, Sign.
     SignAs,
 }
 
-/// The key algorithms of a new digital ID (Acrobat offers RSA; P-256 also works in browsers).
 pub const KEY_ALGORITHMS: [(&str, &str); 4] =
     [("2048-bit RSA", "rsa2048"), ("3072-bit RSA", "rsa3072"), ("4096-bit RSA", "rsa4096"), ("256-bit ECDSA (P-256)", "p256")];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewIdDraft {
-    /// `true`: create a self-signed ID; `false`: use an ID from a file.
     pub create: bool,
     pub name: String,
     pub unit: String,
@@ -55,7 +43,6 @@ pub struct NewIdDraft {
     pub key: usize,
     pub password: String,
     pub confirm: String,
-    /// Use a Digital ID from a file: its path and password.
     pub file: String,
     pub file_password: String,
 }
@@ -78,28 +65,19 @@ impl Default for NewIdDraft {
     }
 }
 
-/// What a visible signature shows on its left (Acrobat: Configure Signature Appearance ▸ Text,
-/// Draw or Image). The one last signed with is remembered.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SignGraphic {
-    /// The signer's name in large type (when Name is on).
     #[default]
     Name,
-    /// The saved Fill & Sign signature, as it is when signing.
     FillSign,
-    /// An imported PNG or JPEG.
     Image(#[serde(with = "crate::fill_sign::image_data")] SignatureImage),
 }
 
-/// The signing dialogs' state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SignDraft {
     pub page: usize,
-    /// The signature rectangle (user space); `None`: invisible.
     pub rect: Option<[f64; 4]>,
-    /// Sign this empty signature field instead.
     pub field: Option<String>,
-    /// Certify (DocMDP) with these permissions: 1 none, 2 form fill and signing, 3 also comments.
     pub certify: Option<u8>,
     pub step: SignStep,
     pub selected: Option<usize>,
@@ -108,17 +86,13 @@ pub struct SignDraft {
     pub location: String,
     pub appearance: Appearance,
     pub graphic: SignGraphic,
-    /// The image the dialog holds (remembered or chosen), so Image can be chosen again.
     pub image: Option<SignatureImage>,
     pub new_id: NewIdDraft,
     pub error: Option<String>,
-    /// Sign with a Digital ID ▸ Remove was clicked for this list entry: asking to confirm.
     pub confirm_remove: Option<usize>,
 }
 
 impl SignDraft {
-    /// Starts at Choose when there are IDs to show (even only unusable ones, so their reasons
-    /// are seen), with the first usable one selected.
     fn new(page: usize, rect: Option<[f64; 4]>, field: Option<String>, certify: Option<u8>, ids: &[DigitalIdEntry]) -> Self {
         Self {
             page,
@@ -140,18 +114,13 @@ impl SignDraft {
     }
 }
 
-/// What a page asks of the signing flow.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SignView {
-    /// A signature rectangle being dragged: (page, start on screen).
     pub drag: Option<(usize, Pos2)>,
-    /// A rectangle was drawn: (page, user-space rect).
     pub drawn: Option<(usize, [f64; 4])>,
-    /// An empty signature field was clicked (its name).
     pub field: Option<String>,
 }
 
-/// Drag a signature rectangle on one page (Digitally sign, Certify (visible signature)).
 pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, xf: &PageXform, page: usize, info: &pdfcraft_render::DocInfo, view: &mut DocView) {
     let pointer = ui.input(|i| i.pointer.hover_pos());
     let origin = ui.input(|i| i.pointer.press_origin());
@@ -186,16 +155,10 @@ pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, xf: &PageXform, p
     }
 }
 
-/// Where new digital IDs are saved: next to the recovery folder (`…/PdfCraft/Digital IDs`, or
-/// `PdfCraftData/Digital IDs` in portable mode).
 fn id_dir() -> Option<PathBuf> {
     crate::recovery::RecoveryStore::default_dir().and_then(|d| d.parent().map(|p| p.join("Digital IDs")))
 }
 
-/// Save a new digital ID as `<stem>.p12`, or `<stem> 2.p12`, … when the name is taken. The file
-/// is always created fresh, never opened through a file or link already at the name (checking
-/// first and then writing would let one be planted in between), and on Unix only its owner can
-/// read it: it holds the private key.
 fn save_new_id_file(dir: &std::path::Path, stem: &str, p12: &[u8]) -> std::io::Result<PathBuf> {
     use std::io::{ErrorKind, Write};
     for i in 1..=10_000u32 {
@@ -207,12 +170,9 @@ fn save_new_id_file(dir: &std::path::Path, stem: &str, p12: &[u8]) -> std::io::R
         let file = match opts.open(&path) {
             Ok(f) => f,
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
-            // Windows refuses `create_new` on a folder with "access denied"; the name is taken all
-            // the same. A folder we can't write to, with nothing at the name, still fails here.
             Err(e) if e.kind() == ErrorKind::PermissionDenied && path.symlink_metadata().is_ok() => continue,
             Err(e) => return Err(e),
         };
-        // The block closes the file before a failed one is removed (Windows can't remove an open file).
         let written = {
             let mut file = file;
             file.write_all(p12).and_then(|()| file.sync_all())
@@ -226,7 +186,6 @@ fn save_new_id_file(dir: &std::path::Path, stem: &str, p12: &[u8]) -> std::io::R
     Err(std::io::Error::new(ErrorKind::AlreadyExists, "no free file name for the digital ID"))
 }
 
-/// A Keychain identity by its `keychain:` reference.
 fn keychain_id(reference: &str) -> Result<DigitalId, String> {
     #[cfg(target_os = "macos")]
     return sign::keychain::find(reference).map_err(|e| e.to_string());
@@ -234,7 +193,6 @@ fn keychain_id(reference: &str) -> Result<DigitalId, String> {
     Err(format!("{reference}: Keychain identities are only available on macOS"))
 }
 
-/// A Windows store identity by its `windows:` reference.
 fn windows_id(reference: &str) -> Result<DigitalId, String> {
     #[cfg(target_os = "windows")]
     return sign::windows::find(reference).map_err(|e| e.to_string());
@@ -253,7 +211,6 @@ pub fn entry_for(path: &str, c: &Certificate) -> DigitalIdEntry {
     }
 }
 
-/// A greyed entry for a Windows store certificate that can't sign, with the reason.
 #[cfg(target_os = "windows")]
 fn entry_unusable(u: &sign::windows::Unusable) -> DigitalIdEntry {
     DigitalIdEntry {
@@ -267,13 +224,11 @@ fn entry_unusable(u: &sign::windows::Unusable) -> DigitalIdEntry {
 }
 
 impl PdfCraftApp {
-    /// Export certificate: write `c` as PEM into a chosen folder, named after its subject.
     pub(crate) fn export_certificate(&mut self, c: &Certificate) {
         let name = format!("{}.cer", crate::files::attachment_file_name(&c.display_name()));
         self.write_files(&[(name, std::sync::Arc::new(certificate_pem(c).into_bytes()))], "Export certificate");
     }
 
-    /// Start signing: the rectangle (or field) is known; show Sign with a Digital ID.
     pub fn start_signing(&mut self, page: usize, rect: Option<[f64; 4]>, field: Option<String>, certify: Option<u8>) {
         self.refresh_os_key_store_ids();
         let mut draft = SignDraft::new(page, rect, field, certify, &self.digital_ids);
@@ -288,7 +243,6 @@ impl PdfCraftApp {
         self.dialog = Some(crate::Dialog::Sign);
     }
 
-    /// List OS key store signing identities (after the file-based IDs).
     fn refresh_os_key_store_ids(&mut self) {
         self.digital_ids.retain(|e| !e.path.starts_with("keychain:") && !e.path.starts_with("windows:"));
         #[cfg(target_os = "macos")]
@@ -297,7 +251,6 @@ impl PdfCraftApp {
                 Ok(ids) => {
                     for id in ids {
                         let mut entry = entry_for(&sign::keychain::reference(&id.certificate), &id.certificate);
-                        // Smart card identities say so ("… (smart card)").
                         if let Some(name) = id.friendly_name {
                             entry.name = name;
                         }
@@ -314,8 +267,6 @@ impl PdfCraftApp {
                     for id in &listing.ids {
                         self.digital_ids.push(entry_for(&sign::windows::reference(&id.certificate), &id.certificate));
                     }
-                    // Certificates without a private key aren't identities; the rest are shown
-                    // greyed with why they can't sign (issue #179).
                     for u in listing.unusable.iter().filter(|u| !u.no_private_key) {
                         self.digital_ids.push(entry_unusable(u));
                     }
@@ -325,7 +276,6 @@ impl PdfCraftApp {
         }
     }
 
-    /// Add a digital ID file to the list (or select it if it's there).
     pub fn add_digital_id(&mut self, path: &str, cert: &Certificate) -> usize {
         if let Some(i) = self.digital_ids.iter().position(|e| e.path == path) {
             self.digital_ids[i] = entry_for(path, cert);
@@ -335,9 +285,6 @@ impl PdfCraftApp {
         self.digital_ids.len() - 1
     }
 
-    /// Take the digital ID file at `index` off the list (issue #1396). The file itself stays on
-    /// disk. Keychain and Windows store IDs belong to the OS and are listed again on every
-    /// signing, so they can't be removed here. The open dialog's selection follows the list.
     pub fn remove_digital_id(&mut self, index: usize) -> bool {
         if self.digital_ids.get(index).is_none_or(|e| e.path.starts_with("keychain:") || e.path.starts_with("windows:")) {
             return false;
@@ -357,14 +304,11 @@ impl PdfCraftApp {
         true
     }
 
-    /// Configure New Digital ID ▸ Create: a self-signed ID saved as a .p12 next to the app data
-    /// (or in `export_dir_override`). Returns its list index.
     fn create_digital_id(&mut self) -> Result<usize, String> {
         let Some(d) = self.sign_draft.as_ref().map(|d| d.new_id.clone()) else { return Err("nothing to create".into()) };
         if d.name.trim().is_empty() {
             return Err("Enter a name.".into());
         }
-        // The message is a catalogue key, so it spells the number out; keep the two in step.
         const _: () = assert!(sign::pkcs12::MIN_PASSWORD_CHARS == 8);
         if d.password.chars().count() < sign::pkcs12::MIN_PASSWORD_CHARS {
             return Err("The password must have at least 8 characters.".into());
@@ -396,7 +340,6 @@ impl PdfCraftApp {
         Ok(self.add_digital_id(&path.to_string_lossy(), &cert))
     }
 
-    /// Configure New Digital ID ▸ Use a Digital ID from a file.
     fn import_digital_id(&mut self) -> Result<usize, String> {
         let Some(d) = self.sign_draft.as_ref().map(|d| d.new_id.clone()) else { return Err("nothing to import".into()) };
         let bytes = std::fs::read(&d.file).map_err(|e| format!("{}: {e}", d.file))?;
@@ -407,10 +350,7 @@ impl PdfCraftApp {
         Ok(self.add_digital_id(&d.file, &id.certificate))
     }
 
-    /// Sign as …: open the ID, sign, save the signed file (Save As), and show it.
     fn finish_signing(&mut self) -> Result<(), String> {
-        // What's typed in a form field is signed with the document (#166). A rejected value keeps
-        // the dialog open; the notice says why.
         if !self.commit_form_typing() {
             return Err(String::new());
         }
@@ -429,7 +369,6 @@ impl PdfCraftApp {
             })?
         };
         let some = |s: &str| (!s.trim().is_empty()).then(|| s.trim().to_string());
-        // Only a visible signature shows its graphic.
         let graphic = match self.graphic_sig(&d.graphic) {
             Some(saved) if d.rect.is_some() || d.field.is_some() => Some(saved.graphic().ok_or("The saved signature has nothing to draw.")?),
             _ => None,
@@ -443,24 +382,18 @@ impl PdfCraftApp {
             location: some(&d.location),
             certify: d.certify,
             appearance: d.appearance.clone(),
-            // The labels the preview shows: in the interface language, or all in English.
             appearance_labels: appearance_labels(crate::i18n::current()).0,
             graphic,
             ..SignOptions::default()
         };
-        // Signing saves, as in Acrobat: choose where (a cancelled save cancels signing). The
-        // document is signed once the user has chosen.
         let name = self.session.get(doc_id).map(|d| d.name.clone()).unwrap_or_default();
         let stem = name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
         let sign_and_save = move |app: &mut Self, path: PathBuf| -> Result<(), String> {
-            // Sign what was typed while the save panel was open, too (#166); a refused value
-            // has said why already.
             if !app.commit_typing_in(doc_id) {
                 return Err(String::new());
             }
             let signed = app.session.sign(doc_id, &id, opts).map_err(|e| e.to_string())?;
             crate::editing::write_atomically(&path.to_string_lossy(), signed.as_slice()).map_err(|e| format!("Could not save: {e}"))?;
-            // Our own write is not a change on disk to reload (#431).
             #[cfg(not(target_arch = "wasm32"))]
             app.watch.known_now(doc_id, &path.to_string_lossy());
             app.session.mark_signed(doc_id, signed, Some(path.to_string_lossy().into_owned())).map_err(|e| e.to_string())?;
@@ -477,10 +410,6 @@ impl PdfCraftApp {
             #[cfg(not(target_arch = "wasm32"))]
             None => {
                 let dialog = rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{stem}_signed.pdf"));
-                // The signature's page, rectangle and field refer to the document as it is now:
-                // the pick is dropped (with a notice) if it is edited or switched away from
-                // meanwhile. Once the picker shows, the dialog closes; an error from here on
-                // arrives as a notice. If no picker could show, the dialog stays open.
                 let asked = self.ask_one(crate::pickers::Ask::Save(dialog), Some(doc_id), move |app, path| {
                     if let Err(e) = sign_and_save(app, path)
                         && !e.is_empty()
@@ -498,12 +427,10 @@ impl PdfCraftApp {
         }
     }
 
-    /// The saved signature or image `g` stands for (`None`: the name).
     fn graphic_sig(&self, g: &SignGraphic) -> Option<SavedSig> {
         graphic_of(self.signature.as_ref(), g)
     }
 
-    /// Sign as ▸ Choose image…: answered only into the signing dialog that asked.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn pick_sign_graphic_image(&mut self) {
         let epoch = self.dialog_epoch();
@@ -512,7 +439,6 @@ impl PdfCraftApp {
             if app.dialog_epoch() != epoch || app.dialog != Some(crate::Dialog::Sign) {
                 return;
             }
-            // Scanned paper becomes transparent, as for Fill & Sign image signatures.
             let image = std::fs::File::open(path)
                 .map_err(pdfcraft_engine::signature_image::SignatureImageError::from)
                 .and_then(SignatureImage::read)
@@ -529,7 +455,6 @@ impl PdfCraftApp {
         });
     }
 
-    /// Trust a certificate (Signatures panel ▸ Add to trusted certificates), revalidating.
     pub fn trust_certificate(&mut self, cert: Certificate) {
         let mut certs = self.session.trusted_certificates().to_vec();
         if !certs.iter().any(|c| c.raw == cert.raw) {
@@ -538,11 +463,6 @@ impl PdfCraftApp {
         self.apply_trusted_certificates(certs);
     }
 
-    /// Replace the trust store and redraw from the rebuilt display copy. One helper
-    /// so no caller can revalidate without invalidating: trust changes verdicts,
-    /// verdicts choose what the display copy shows, and the old rasters would
-    /// otherwise linger while the badge already follows the new verdict.
-    /// Trust alone is not an edit: nothing becomes dirty.
     pub fn apply_trusted_certificates(&mut self, certs: Vec<Certificate>) {
         self.session.set_trusted_certificates(certs);
         for view in &mut self.views {
@@ -550,19 +470,13 @@ impl PdfCraftApp {
         }
     }
 
-    /// A file name without its PDF extension, for snapshot tab names.
     fn file_stem(name: &str) -> String {
         name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string()
     }
 
-    /// Open saved revision `n` (1 = the oldest) of the active document as a new document.
-    /// A repeat reuses the tab: every click used to open another identical one.
     pub fn open_revision(&mut self, n: usize) {
         let Some((_, id)) = self.active_ids() else { return };
         let Some(doc) = self.session.get(id) else { return };
-        // The revision's byte range, as `Session::open_revision` reads it. An unknown `n`
-        // skips the lookup: the whole file could otherwise match the latest revision's tab
-        // instead of erroring.
         let ends = doc.revision_ends();
         if let Some(&end) = n.checked_sub(1).and_then(|k| ends.get(k)) {
             let end = end.min(doc.bytes.len());
@@ -574,7 +488,6 @@ impl PdfCraftApp {
         let from = doc.name.clone();
         match self.session.open_revision(id, n) {
             Ok(new) => {
-                // The reading-colours preference is app-wide: the newly opened revision starts with it.
                 self.session.set_reading_colors(new, self.reading_colors);
                 let Some(doc) = self.session.get(new) else { return };
                 let mut view = DocView::new(new, &doc.info, self.view_defaults);
@@ -586,12 +499,6 @@ impl PdfCraftApp {
         }
     }
 
-    /// A tab already showing these exact snapshot bytes: its index, so a repeat
-    /// switches to it instead of opening another identical tab. An exact match on
-    /// the source document wins, so the banner names the file opened from; a
-    /// bytes-only match still reuses the tab (incremental saves append, so one
-    /// file's revision can be byte-identical to another tab's, and a snapshot's
-    /// own repeats name the snapshot itself).
     fn find_snapshot(&self, kind: SnapshotKind, from: &str, bytes: &[u8]) -> Option<usize> {
         let mut fallback = None;
         for (i, v) in self.views.iter().enumerate() {
@@ -608,8 +515,6 @@ impl PdfCraftApp {
         fallback
     }
 
-    /// Open the signed version of a signature as a new document (View signed version).
-    /// A repeat reuses the tab: every click used to open another identical one.
     pub fn view_signed_version(&mut self, len: usize, revision: usize) {
         let Some((_, id)) = self.active_ids() else { return };
         let Some(doc) = self.session.get(id) else { return };
@@ -623,7 +528,6 @@ impl PdfCraftApp {
         let name = format!("{} (signed version)", Self::file_stem(&from));
         match self.session.open(format!("{name}.pdf"), None, std::sync::Arc::new(bytes), doc.password.clone().as_deref()) {
             Ok(new) => {
-                // The reading-colours preference is app-wide: the newly opened copy starts with it.
                 self.session.set_reading_colors(new, self.reading_colors);
                 let Some(doc) = self.session.get(new) else { return };
                 let mut view = DocView::new(new, &doc.info, self.view_defaults);
@@ -636,7 +540,6 @@ impl PdfCraftApp {
     }
 }
 
-/// Draw the signing dialogs; returns `true` when the dialog should close.
 pub(crate) fn dialog(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     let Some(step) = app.sign_draft.as_ref().map(|d| d.step) else { return true };
     match step {
@@ -681,11 +584,8 @@ fn choose(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
                 Color32::TRANSPARENT
             };
             ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
-            // An unusable ID is greyed, with the reason where the issuer would be.
             let (icon, name_color) = if usable { (t.accent, t.text) } else { (t.text_muted, t.text_muted) };
             icons::paint(ui, Rect::from_min_size(rect.min + vec2(10.0, 15.0), vec2(20.0, 20.0)), "badge-check", 18.0, icon);
-            // Certificate names can be any length: cut both lines with "…" at the row's edge
-            // and show them whole on hover.
             let line = |text: &str, font: egui::FontId, color: Color32| {
                 let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
                 job.wrap = egui::text::TextWrapping::truncate_at_width((rect.width() - 50.0).max(0.0));
@@ -731,7 +631,6 @@ fn choose(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
         }
     });
     ui.add_space(10.0);
-    // Remove takes a digital ID file off the list after asking (#1396); OS key store IDs stay.
     let mut remove = None;
     if let Some(e) = d.confirm_remove.and_then(|i| ids.get(i)) {
         ui.label(crate::i18n::fmt(tl!("Remove \"{name}\" from this list? The file itself is not deleted."), &[("name", &e.name)]));
@@ -775,7 +674,6 @@ fn configure(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     let Some(d) = app.sign_draft.as_mut() else { return true };
     let mut close = false;
     let mut go = false;
-    // Browse… is desktop-only.
     #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
     let mut browse = false;
     widgets::radio_value(ui, &mut d.new_id.create, false, tl!("Use a Digital ID from a file"));
@@ -862,13 +760,11 @@ fn configure(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
             Err(e) => d.error = Some(e),
         }
     }
-    // The picker answers on a later frame, into the draft if the same dialog is still open.
     #[cfg(not(target_arch = "wasm32"))]
     if browse {
         let dialog = rfd::AsyncFileDialog::new().add_filter(tl!("Digital ID"), &["p12", "pfx"]);
         let epoch = app.dialog_epoch();
         app.ask_one(crate::pickers::Ask::File(dialog), None, move |app, p| {
-            // Not one closed meanwhile, or opened again since.
             if app.dialog_epoch() == epoch
                 && let Some(d) = app.sign_draft.as_mut()
             {
@@ -881,8 +777,6 @@ fn configure(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     close
 }
 
-/// The appearance preview: Acrobat's standard layout (name left, details right).
-/// The saved signature or image `g` stands for, given the saved Fill & Sign `signature`.
 fn graphic_of(signature: Option<&SavedSig>, g: &SignGraphic) -> Option<SavedSig> {
     match g {
         SignGraphic::Name => None,
@@ -891,13 +785,6 @@ fn graphic_of(signature: Option<&SavedSig>, g: &SignGraphic) -> Option<SavedSig>
     }
 }
 
-/// The words of a visible signature's labels in `lang`, and whether they fell back to English.
-///
-/// The labels are stamped into the document, so they are all in `lang` or all in English, never a
-/// mix. English when `lang` is English; when it is written right to left (its catalog is kept in
-/// display order, not the order a PDF stores text in); when one label has no translation; or when
-/// the signature's font can't draw one (Chinese, Japanese, Cyrillic, Greek in Helvetica), which
-/// signing would refuse. The English words are the sign crate's own, so they can't drift apart.
 pub(crate) fn appearance_labels(lang: crate::i18n::Lang) -> (AppearanceLabels, bool) {
     let english = AppearanceLabels::default();
     if lang == crate::i18n::Lang::EN {
@@ -919,9 +806,6 @@ pub(crate) fn appearance_labels(lang: crate::i18n::Lang) -> (AppearanceLabels, b
     }
 }
 
-/// The detail lines of a visible signature, as `sign::pdf` stamps them (the distinguished name
-/// aside, which the dialog doesn't know before the ID is opened): the label above the name, then
-/// the reason, location and date, each after its label. `reason` and `location` are as typed.
 fn detail_lines(a: &Appearance, labels: &AppearanceLabels, name: &str, reason: &str, location: &str, date: &str) -> Vec<String> {
     let label = |l: &str, v: &str| if a.labels { format!("{l}{v}") } else { v.to_string() };
     let mut lines = Vec::new();
@@ -944,8 +828,6 @@ fn detail_lines(a: &Appearance, labels: &AppearanceLabels, name: &str, reason: &
     lines
 }
 
-/// The signature as it will look: the graphic (or the name) on the left, the details beside it
-/// (`lines`, from [`detail_lines`] with the labels signing will stamp).
 fn preview(
     ui: &mut egui::Ui,
     t: &Tokens,
@@ -959,7 +841,6 @@ fn preview(
     let bg = if t.dark() { Color32::from_gray(0xF4) } else { Color32::WHITE };
     ui.painter().rect(rect, CornerRadius::same(4), bg, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     let inner = rect.shrink(10.0);
-    // As in the signature itself: a graphic with no details beside it fills the box.
     let alone = graphic.is_some() && lines.is_empty();
     let half = Rect::from_min_size(inner.min, vec2(inner.width() * 0.5 - 6.0, inner.height()));
     if let Some(g) = graphic {
@@ -975,7 +856,6 @@ fn preview(
 
 fn sign_as(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     let ids = app.digital_ids.clone();
-    // The time as the signature will show it (signing takes the session clock then).
     let date = sign::pdf::display_date(&app.session.signing_date());
     let Some(d) = app.sign_draft.as_mut() else { return true };
     let Some(entry) = d.selected.and_then(|i| ids.get(i)).cloned() else {
@@ -1016,7 +896,6 @@ fn sign_as(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
             ui.add(widgets::checkbox(&mut a.distinguished_name, tl!("Distinguished name")));
             ui.add(widgets::checkbox(&mut a.labels, tl!("Labels")));
         });
-        // Acrobat: Configure Signature Appearance, Text, Draw or Image.
         ui.horizontal_wrapped(|ui| {
             ui.label(tl!("Graphic"));
             widgets::radio_value(ui, &mut d.graphic, SignGraphic::Name, tl!("Signer's name"));
@@ -1120,9 +999,6 @@ fn sign_as(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     close
 }
 
-/// The message bar for signed documents: (icon, colour, template, argument).
-/// The template renders through [`crate::i18n::tr_fmt`] at the call site, so the bar follows
-/// the UI language; names inside `argument` stay as they are.
 pub(crate) fn banner(sigs: &[SignatureInfo]) -> Option<(&'static str, Color32, &'static str, String)> {
     let signed: Vec<&SignatureInfo> = sigs.iter().filter(|s| s.signed).collect();
     if signed.is_empty() {
@@ -1158,8 +1034,6 @@ fn status_icon(s: &SignatureInfo) -> (&'static str, Color32) {
     signature_status_style(s.status)
 }
 
-/// One look per signature verdict, shared by the Signatures panel and the page badges so
-/// the two can't drift apart.
 pub(crate) fn signature_status_style(status: SignatureStatus) -> (&'static str, Color32) {
     match status {
         SignatureStatus::Valid => ("circle-check", Color32::from_rgb(0x2D, 0x9D, 0x78)),
@@ -1168,7 +1042,6 @@ pub(crate) fn signature_status_style(status: SignatureStatus) -> (&'static str, 
     }
 }
 
-/// What the Signatures panel asks the app to do.
 #[derive(Clone, Debug)]
 pub enum PanelAction {
     Validate,
@@ -1180,11 +1053,9 @@ pub enum PanelAction {
     },
     Sign(String),
     ExportCertificate(Box<Certificate>),
-    /// Certificate Viewer for the signer's chain (signer first).
     ViewCertificate(Vec<Certificate>),
 }
 
-/// The Signatures panel body.
 pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expanded: &mut Vec<String>) -> Option<PanelAction> {
     let mut action = None;
     ui.horizontal(|ui| {
@@ -1251,8 +1122,6 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
                 .font(theme::semibold(12.0)),
             );
             for detail in &s.details {
-                // Each detail is a whole sentence of ours plus what the signature itself says; said
-                // here in the panel's language, with the signature's own words left as they are.
                 let line = detail.said(&crate::i18n::words);
                 ui.add(egui::Label::new(egui::RichText::new(format!("• {line}")).font(theme::regular(11.5)).color(t.text_muted)).wrap());
             }
@@ -1300,9 +1169,6 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
             }
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                // Trust exactly the signer shown above (s.certificate), not the chain top the
-                // document embedded: trusting an issuer or root is a separate, explicit step in
-                // the Certificate Viewer's Trust tab, which names that certificate.
                 if let Some(c) = s.certificate.as_ref()
                     && s.status == SignatureStatus::Unknown
                     && ui.button(tl!("Add to trusted certificates")).clicked()
@@ -1330,7 +1196,6 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, sigs: &[SignatureInfo], expan
     action
 }
 
-/// Certificate Viewer: a chain (the end certificate first) and the tab shown.
 #[derive(Clone, Debug)]
 pub struct CertViewer {
     pub chain: Vec<Certificate>,
@@ -1365,111 +1230,132 @@ fn key_usage(bits: u16) -> String {
     if used.is_empty() { tl!("None").into() } else { used.join(", ") }
 }
 
-/// What the viewer asks for.
 pub(crate) enum CertAction {
     Trust(Box<Certificate>),
     Export(Box<Certificate>),
 }
 
-/// The Certificate Viewer dialog: the chain on the left, the selected certificate's tabs.
+fn show_cert_chain(ui: &mut egui::Ui, v: &mut CertViewer) {
+    for (depth, i) in (0..v.chain.len()).rev().enumerate() {
+        let c = &v.chain[i];
+        ui.horizontal(|ui| {
+            ui.add_space(depth as f32 * 12.0);
+            if ui.selectable_label(v.selected == i, c.display_name()).clicked() {
+                v.selected = i;
+            }
+        });
+    }
+}
+
+fn show_cert_details(ui: &mut egui::Ui, v: &mut CertViewer, trusted: &[Certificate], t: &Tokens, action: &mut Option<CertAction>) {
+    let Some(c) = v.chain.get(v.selected).cloned() else { return };
+    ui.horizontal(|ui| {
+        for (tab, label) in [(CertTab::Summary, tl!("Summary")), (CertTab::Details, tl!("Details")), (CertTab::Trust, tl!("Trust"))] {
+            if widgets::pill_button(ui, label, v.tab == tab).clicked() {
+                v.tab = tab;
+            }
+        }
+    });
+    ui.add_space(8.0);
+    let grid = |ui: &mut egui::Ui, rows: Vec<(&str, String)>| {
+        egui::Grid::new(("cert-rows", v.tab as u8)).num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
+            for (k, val) in rows {
+                ui.label(egui::RichText::new(tl_ctx!("certificate", k)).color(t.text_muted));
+                ui.add(egui::Label::new(val).wrap());
+                ui.end_row();
+            }
+        });
+    };
+    match v.tab {
+        CertTab::Summary => grid(
+            ui,
+            vec![
+                ("Issued to", c.subject.display()),
+                ("Issued by", c.issuer.display()),
+                ("Valid from", c.not_before.to_string()),
+                ("Valid to", c.not_after.to_string()),
+                ("Intended usage", c.key_usage.map(key_usage).unwrap_or_else(|| tl!("Any").to_string())),
+            ],
+        ),
+        CertTab::Details => grid(
+            ui,
+            vec![
+                ("Version", "3".into()),
+                ("Serial number", c.serial_hex()),
+                ("Issuer", c.issuer.display()),
+                ("Subject", c.subject.display()),
+                ("Validity starts", c.not_before.to_string()),
+                ("Validity ends", c.not_after.to_string()),
+                ("Public key", c.public_key.describe()),
+                ("Basic constraints", tl!(if c.is_ca { "Certificate authority" } else { "End entity" }).to_string()),
+                ("Key usage", c.key_usage.map(key_usage).unwrap_or_else(|| tl!("Not present").to_string())),
+                ("Self-signed", if c.is_self_signed() { tl!("Yes").to_string() } else { tl!("No").to_string() }),
+                ("SHA-1 digest", hex(&sign::keys::DigestAlg::Sha1.digest(&[&c.raw]))),
+                ("SHA-256 digest", hex(&sign::keys::DigestAlg::Sha256.digest(&[&c.raw]))),
+            ],
+        ),
+        CertTab::Trust => {
+            let is_trusted = trusted.iter().any(|x| x.raw == c.raw);
+            let anchored = v.chain.iter().any(|x| trusted.iter().any(|y| y.raw == x.raw));
+            ui.label(if is_trusted {
+                tl!("This certificate is in your list of trusted certificates.")
+            } else if anchored {
+                tl!("This certificate is trusted through a certificate above it in the chain.")
+            } else {
+                tl!("This certificate is not trusted. Signatures made with it show an unknown identity.")
+            });
+            ui.add_space(8.0);
+            if !is_trusted && widgets::pill_button(ui, tl!("Add to Trusted Certificates"), false).clicked() {
+                *action = Some(CertAction::Trust(Box::new(c.clone())));
+            }
+        }
+    }
+    ui.add_space(8.0);
+    if widgets::pill_button(ui, tl!("Export…"), false).clicked() {
+        *action = Some(CertAction::Export(Box::new(c.clone())));
+    }
+}
+
 pub(crate) fn cert_viewer(ui: &mut egui::Ui, v: &mut CertViewer, trusted: &[Certificate], t: &Tokens) -> (bool, Option<CertAction>) {
+    let compact = crate::layout_traits::is_compact(ui);
     title(ui, "Certificate Viewer");
     ui.label(egui::RichText::new(tl!("This dialog shows the details of a certificate and its chain.")).color(t.text_muted));
     ui.add_space(8.0);
     let mut action = None;
     v.selected = v.selected.min(v.chain.len().saturating_sub(1));
-    ui.horizontal_top(|ui| {
-        // The chain, root at the top (as Acrobat shows it).
+
+    if compact {
         ui.vertical(|ui| {
-            ui.set_width(200.0);
-            for (depth, i) in (0..v.chain.len()).rev().enumerate() {
-                let c = &v.chain[i];
-                ui.horizontal(|ui| {
-                    ui.add_space(depth as f32 * 12.0);
-                    if ui.selectable_label(v.selected == i, c.display_name()).clicked() {
-                        v.selected = i;
-                    }
-                });
-            }
+            ui.set_width(ui.available_width());
+            show_cert_chain(ui, v);
         });
-        ui.add_space(16.0);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
         ui.vertical(|ui| {
-            ui.set_width(440.0);
-            let Some(c) = v.chain.get(v.selected).cloned() else { return };
-            ui.horizontal(|ui| {
-                for (tab, label) in [(CertTab::Summary, tl!("Summary")), (CertTab::Details, tl!("Details")), (CertTab::Trust, tl!("Trust"))] {
-                    if widgets::pill_button(ui, label, v.tab == tab).clicked() {
-                        v.tab = tab;
-                    }
-                }
+            ui.set_width(ui.available_width());
+            show_cert_details(ui, v, trusted, t, &mut action);
+        });
+    } else {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(200.0);
+                show_cert_chain(ui, v);
             });
-            ui.add_space(8.0);
-            let grid = |ui: &mut egui::Ui, rows: Vec<(&str, String)>| {
-                egui::Grid::new(("cert-rows", v.tab as u8)).num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
-                    for (k, val) in rows {
-                        ui.label(egui::RichText::new(tl_ctx!("certificate", k)).color(t.text_muted));
-                        ui.add(egui::Label::new(val).wrap());
-                        ui.end_row();
-                    }
-                });
-            };
-            match v.tab {
-                CertTab::Summary => grid(
-                    ui,
-                    vec![
-                        ("Issued to", c.subject.display()),
-                        ("Issued by", c.issuer.display()),
-                        ("Valid from", c.not_before.to_string()),
-                        ("Valid to", c.not_after.to_string()),
-                        ("Intended usage", c.key_usage.map(key_usage).unwrap_or_else(|| tl!("Any").to_string())),
-                    ],
-                ),
-                CertTab::Details => grid(
-                    ui,
-                    vec![
-                        ("Version", "3".into()),
-                        ("Serial number", c.serial_hex()),
-                        ("Issuer", c.issuer.display()),
-                        ("Subject", c.subject.display()),
-                        ("Validity starts", c.not_before.to_string()),
-                        ("Validity ends", c.not_after.to_string()),
-                        ("Public key", c.public_key.describe()),
-                        ("Basic constraints", tl!(if c.is_ca { "Certificate authority" } else { "End entity" }).to_string()),
-                        ("Key usage", c.key_usage.map(key_usage).unwrap_or_else(|| tl!("Not present").to_string())),
-                        ("Self-signed", if c.is_self_signed() { tl!("Yes").to_string() } else { tl!("No").to_string() }),
-                        ("SHA-1 digest", hex(&sign::keys::DigestAlg::Sha1.digest(&[&c.raw]))),
-                        ("SHA-256 digest", hex(&sign::keys::DigestAlg::Sha256.digest(&[&c.raw]))),
-                    ],
-                ),
-                CertTab::Trust => {
-                    let is_trusted = trusted.iter().any(|x| x.raw == c.raw);
-                    let anchored = v.chain.iter().any(|x| trusted.iter().any(|y| y.raw == x.raw));
-                    ui.label(if is_trusted {
-                        tl!("This certificate is in your list of trusted certificates.")
-                    } else if anchored {
-                        tl!("This certificate is trusted through a certificate above it in the chain.")
-                    } else {
-                        tl!("This certificate is not trusted. Signatures made with it show an unknown identity.")
-                    });
-                    ui.add_space(8.0);
-                    if !is_trusted && widgets::pill_button(ui, tl!("Add to Trusted Certificates"), false).clicked() {
-                        action = Some(CertAction::Trust(Box::new(c.clone())));
-                    }
-                }
-            }
-            ui.add_space(8.0);
-            if widgets::pill_button(ui, tl!("Export…"), false).clicked() {
-                action = Some(CertAction::Export(Box::new(c.clone())));
-            }
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(440.0);
+                show_cert_details(ui, v, trusted, t, &mut action);
+            });
         });
-    });
+    }
+
     ui.add_space(10.0);
     let mut close = false;
     ui.horizontal(|ui| ui.with_layout(Layout::right_to_left(Align::Center), |ui| close = widgets::pill_button(ui, tl!("OK"), true).clicked()));
     (close, action)
 }
 
-/// The text of an exported certificate (`.cer`, PEM).
 pub fn certificate_pem(c: &Certificate) -> String {
     sign::x509::to_pem(c)
 }
@@ -1478,7 +1364,6 @@ pub fn certificate_pem(c: &Certificate) -> String {
 mod tests {
     use super::*;
 
-    /// A fresh folder per call: tests run in parallel.
     fn scratch() -> PathBuf {
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1488,13 +1373,10 @@ mod tests {
         d
     }
 
-    /// Create a digital ID named "Grace Hopper" in `dir`, as Configure New Digital ID ▸ Create
-    /// does. Returns where it was saved.
     fn create_in(dir: &std::path::Path) -> Result<PathBuf, String> {
         let mut app = PdfCraftApp::new();
         app.export_dir_override = Some(dir.to_string_lossy().into_owned());
         let mut draft = SignDraft::new(0, None, None, None, &[]);
-        // P-256 keeps the test fast.
         let key = KEY_ALGORITHMS.iter().position(|k| k.1 == "p256").unwrap();
         draft.new_id =
             NewIdDraft { name: "Grace Hopper".into(), key, password: "secret12".into(), confirm: "secret12".into(), ..NewIdDraft::default() };
@@ -1530,8 +1412,6 @@ mod tests {
     #[test]
     fn a_new_digital_id_skips_names_already_taken_without_writing_through_them() {
         let dir = scratch();
-        // Another file's hard link at the first name, and a folder at the second (Windows refuses
-        // `create_new` on a folder with "access denied" rather than "already exists").
         std::fs::write(dir.join("victim.txt"), "keep me").unwrap();
         std::fs::hard_link(dir.join("victim.txt"), dir.join("Grace Hopper.p12")).unwrap();
         std::fs::create_dir(dir.join("Grace Hopper 2.p12")).unwrap();
@@ -1544,8 +1424,6 @@ mod tests {
 
     #[test]
     fn a_new_digital_id_is_not_written_through_a_dangling_link() {
-        // `exists()` follows links, so a link to a file that doesn't exist yet looked free, and
-        // `fs::write` then created the private key wherever the link pointed.
         let dir = scratch();
         let (link, target) = (dir.join("Grace Hopper.p12"), dir.join("elsewhere.p12"));
         #[cfg(unix)]
@@ -1558,7 +1436,6 @@ mod tests {
             Err(std::io::ErrorKind::Unsupported.into())
         };
         if let Err(e) = made {
-            // Windows needs Developer Mode (or admin) for symlinks.
             eprintln!("skipped: can't create a symlink here: {e}");
             let _ = std::fs::remove_dir_all(&dir);
             return;
@@ -1584,8 +1461,6 @@ mod tests {
         DigitalIdEntry { path: path.into(), name: name.into(), issuer: String::new(), email: String::new(), expires: String::new(), unusable: None }
     }
 
-    /// Issue #1396: an imported ID can be taken off the list (its file stays), the dialog's
-    /// selection follows, an OS key store ID or a stale index is refused, and the removal is saved.
     #[test]
     fn a_digital_id_file_is_removed_from_the_list_and_stays_removed() {
         let dir = scratch();
@@ -1606,8 +1481,6 @@ mod tests {
         let d = app.sign_draft.as_ref().unwrap();
         assert_eq!((d.selected, d.confirm_remove, d.step), (Some(1), None, SignStep::Choose), "still New, no pending question");
 
-        // Removing the selected ID selects the first usable one; removing the last file ID
-        // leaves only the store ID, which isn't saved.
         assert!(app.remove_digital_id(1));
         assert_eq!(app.sign_draft.as_ref().unwrap().selected, Some(0));
         let mut fresh = PdfCraftApp::new();
@@ -1616,9 +1489,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The labels a signature is stamped with are all in the interface language, or all in
-    /// English when the signature's font can't draw them there (or the language is right to
-    /// left): never a mix, and never a label signing would refuse.
     #[test]
     fn appearance_labels_are_translated_or_all_english() {
         use crate::i18n::{Lang, tr};
@@ -1644,8 +1514,6 @@ mod tests {
         }
     }
 
-    /// The preview's details are the stamp's: the label above the name, then each detail after
-    /// its label, in the words given, and only the values when the labels are off.
     #[test]
     fn preview_lines_use_the_labels_signing_stamps() {
         let (de, _) = appearance_labels(crate::i18n::Lang::from_code("de").unwrap());

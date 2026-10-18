@@ -73,7 +73,11 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
     }
 
+    let dialog_id = egui::Id::new("active_dialog_type");
+
     let Some(dialog) = app.dialog else {
+
+        ctx.data_mut(|d| d.remove::<Dialog>(dialog_id));
 
         app.props_draft = None;
 
@@ -82,6 +86,12 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
         return;
 
     };
+
+    let prev_dialog: Option<Dialog> = ctx.data(|d| d.get_temp(dialog_id));
+
+    let just_opened = prev_dialog.is_none();
+
+    ctx.data_mut(|d| d.insert_temp(dialog_id, dialog));
 
 
     if let (Dialog::Properties(PropsTab::Fonts), Some((_, id))) = (dialog, app.active_ids()) {
@@ -180,24 +190,23 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let mut next = dialog;
 
     let modal = widgets::show_modal(ctx, "dialog", |ui| {
-
-        let max_w: f32 = (ui.ctx().content_rect().width() - 24.0).max(200.0);
-
+        let screen = ui.ctx().content_rect();
         let target_w: f32 = match dialog {
-
             Dialog::Properties(_) => 640.0,
-
             Dialog::Print => 820.0,
-
             Dialog::FieldProps | Dialog::BulkFieldProps => 600.0,
-
             Dialog::About => 780.0,
-
+            Dialog::CertificateViewer => 700.0,
             _ => 520.0,
-
         };
-
-        ui.set_width(target_w.min(max_w));
+        let max_w: f32 = if crate::layout_traits::is_compact_ctx(ui.ctx()) {
+            (screen.width() - 24.0).clamp(280.0, 520.0)
+        } else {
+            (screen.width() - 24.0).max(200.0)
+        };
+        let dialog_w = target_w.min(max_w);
+        ui.set_width(dialog_w);
+        ui.set_max_width(dialog_w);
 
         match dialog {
 
@@ -261,573 +270,311 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
                 let i = &doc.info;
 
+                let compact = crate::layout_traits::is_compact(ui);
                 let row = |ui: &mut egui::Ui, k: &str, v: String| {
-
-
-                    ui.label(egui::RichText::new(tl!(k)).color(t.text_muted));
-
-                    ui.scope(|ui| {
-
-                        ui.set_max_width(420.0);
-
+                    if compact {
+                        ui.label(egui::RichText::new(tl!(k)).small().color(t.text_muted));
                         ui.add(
-
                             egui::Label::new(if v.is_empty() { egui::RichText::new("—").color(t.text_faint) } else { egui::RichText::new(v) }).wrap(),
-
                         );
-
-                    });
-
-                    ui.end_row();
-
+                        ui.add_space(4.0);
+                    } else {
+                        ui.label(egui::RichText::new(tl!(k)).color(t.text_muted));
+                        ui.scope(|ui| {
+                            ui.set_max_width(420.0);
+                            ui.add(
+                                egui::Label::new(if v.is_empty() { egui::RichText::new("—").color(t.text_faint) } else { egui::RichText::new(v) }).wrap(),
+                            );
+                        });
+                        ui.end_row();
+                    }
                 };
-
-                egui::ScrollArea::vertical().max_height(460.0).auto_shrink([false, true]).show(ui, |ui| {
-
-                    egui::Grid::new("props").num_columns(2).spacing([18.0, 8.0]).min_col_width(140.0).show(ui, |ui| match tab {
-
+                let max_h = (ui.ctx().content_rect().height() - 140.0).clamp(240.0, 460.0);
+                egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
+                    let mut render_body = |ui: &mut egui::Ui| match tab {
                         PropsTab::Description => {
-
                             row(ui, "File", crate::bidi::visual(&doc.name).into_owned());
-
                             match app.props_draft.as_mut() {
-
                                 Some((_, draft)) if doc.allows_modification() => {
-
                                     for (k, v) in INFO_KEYS.iter().zip(draft.iter_mut()) {
-
-                                        let l = ui.label(egui::RichText::new(tl!(k)).color(t.text_muted));
-
-                                        ui.add(widgets::line(v).desired_width(420.0).background_color(t.field).id_salt(("info", *k)))
-
-                                            .labelled_by(l.id);
-
-                                        ui.end_row();
-
+                                        if compact {
+                                            let l = ui.label(egui::RichText::new(tl!(k)).small().color(t.text_muted));
+                                            ui.add(widgets::line(v).desired_width(ui.available_width()).background_color(t.field).id_salt(("info", *k)))
+                                                .labelled_by(l.id);
+                                            ui.add_space(4.0);
+                                        } else {
+                                            let l = ui.label(egui::RichText::new(tl!(k)).color(t.text_muted));
+                                            ui.add(widgets::line(v).desired_width(420.0).background_color(t.field).id_salt(("info", *k)))
+                                                .labelled_by(l.id);
+                                            ui.end_row();
+                                        }
                                     }
-
                                 }
-
                                 _ => {
-
                                     row(ui, "Title", i.title.clone().unwrap_or_default());
-
                                     row(ui, "Author", i.author.clone().unwrap_or_default());
-
                                     row(ui, "Subject", i.subject.clone().unwrap_or_default());
-
                                     row(ui, "Keywords", i.keywords.clone().unwrap_or_default());
-
                                 }
-
                             }
-
                             row(ui, "Application", i.creator.clone().unwrap_or_default());
-
                             row(ui, "PDF producer", i.producer.clone().unwrap_or_default());
-
                         }
-
                         PropsTab::InitialView => {
-
                             use pdfcraft_engine::{InitialLayout as L, Magnification as M, Navigation as N};
-
                             let editable = doc.allows_modification();
-
                             let pages = i.pages.len();
-
                             let Some((_, v)) = app.view_draft.as_mut() else { return };
-
                             ui.label(egui::RichText::new(tl!("Layout and Magnification")).font(theme::semibold(12.5)));
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(tl!("Navigation tab"));
-
                             ui.add_enabled_ui(editable, |ui| {
-
                                 egui::ComboBox::from_id_salt("iv-nav")
-
                                     .selected_text(tl!(format!("{:?}", v.navigation)
-
                                         .replace("PageOnly", "Page Only")
-
                                         .replace("Pages", "Pages Panel and Page")
-
                                         .as_str()))
-
                                     .show_ui(ui, |ui| {
-
                                         for (n, l) in [
-
                                             (N::PageOnly, tl!("Page Only")),
-
                                             (N::Bookmarks, tl!("Bookmarks Panel and Page")),
-
                                             (N::Pages, tl!("Pages Panel and Page")),
-
                                             (N::Attachments, tl!("Attachments Panel and Page")),
-
                                             (N::Layers, tl!("Layers Panel and Page")),
-
                                         ] {
-
                                             ui.selectable_value(&mut v.navigation, n, l);
-
                                         }
-
                                     });
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(tl!("Page layout"));
-
                             ui.add_enabled_ui(editable, |ui| {
-
                                 let names = [
-
                                     (L::Default, tl!("Default")),
-
                                     (L::SinglePage, tl!("Single Page")),
-
                                     (L::SinglePageContinuous, tl!("Single Page Continuous")),
-
                                     (L::TwoUp, tl!("Two-Up (Facing)")),
-
                                     (L::TwoUpContinuous, tl!("Two-Up Continuous (Facing)")),
-
                                     (L::TwoUpCoverPage, tl!("Two-Up (Cover Page)")),
-
                                     (L::TwoUpContinuousCoverPage, tl!("Two-Up Continuous (Cover Page)")),
-
                                 ];
-
                                 let shown = names.iter().find(|(l, _)| *l == v.layout).map_or(tl!("Default"), |(_, n)| n);
-
                                 egui::ComboBox::from_id_salt("iv-layout").selected_text(shown).show_ui(ui, |ui| {
-
                                     for (l, n) in names {
-
                                         ui.selectable_value(&mut v.layout, l, n);
-
                                     }
-
                                 });
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(tl!("Magnification"));
-
                             ui.add_enabled_ui(editable, |ui| {
-
                                 ui.horizontal(|ui| {
-
                                     let names = [
-
                                         (M::Default, tl!("Default")),
-
                                         (M::ActualSize, tl!("Actual Size")),
-
                                         (M::FitPage, tl!("Fit Page")),
-
                                         (M::FitWidth, tl!("Fit Width")),
-
                                         (M::FitHeight, tl!("Fit Height")),
-
                                         (M::FitVisible, tl!("Fit Visible")),
-
                                     ];
-
                                     let shown = match v.magnification {
-
                                         M::Percent(p) => format!("{p:.0}%"),
-
                                         m => names.iter().find(|(x, _)| *x == m).map_or(tl!("Default").to_string(), |(_, n)| n.to_string()),
-
                                     };
-
                                     egui::ComboBox::from_id_salt("iv-mag").selected_text(shown).show_ui(ui, |ui| {
-
                                         for (m, n) in names {
-
                                             ui.selectable_value(&mut v.magnification, m, n);
-
                                         }
-
                                         for p in [50.0, 75.0, 125.0, 150.0, 200.0] {
-
                                             ui.selectable_value(&mut v.magnification, M::Percent(p), format!("{p:.0}%"));
-
                                         }
-
                                     });
-
                                 });
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(tl!("Open to page"));
-
                             ui.add_enabled_ui(editable, |ui| {
-
                                 let mut p = v.page + 1;
-
                                 if ui.add(egui::DragValue::new(&mut p).range(1..=pages.max(1))).changed() {
-
                                     v.page = p - 1;
-
                                 }
-
                                 ui.label(crate::i18n::fmt(tl!("of {pages}"), &[("pages", &pages.to_string())]));
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(egui::RichText::new(tl!("Window Options")).font(theme::semibold(12.5)));
-
-                            ui.end_row();
-
-                            ui.label("");
-
+                            if !compact { ui.end_row(); }
+                            if !compact { ui.label(""); }
                             ui.add_enabled_ui(editable, |ui| {
-
                                 ui.vertical(|ui| {
-
                                     ui.add(widgets::checkbox(&mut v.fit_window, tl!("Resize window to initial page")));
-
                                     ui.add(widgets::checkbox(&mut v.center_window, tl!("Center window on screen")));
-
                                     ui.add(widgets::checkbox(&mut v.full_screen, tl!("Open in Full Screen mode")));
-
-                                    ui.horizontal(|ui| {
-
+                                    ui.horizontal_wrapped(|ui| {
                                         ui.label(tl!("Show:"));
-
                                         widgets::radio_value(ui, &mut v.display_title, false, tl!("File Name"));
-
                                         widgets::radio_value(ui, &mut v.display_title, true, tl!("Document Title"));
-
                                     });
-
                                 });
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                             ui.label(egui::RichText::new(tl!("User Interface Options")).font(theme::semibold(12.5)));
-
-                            ui.end_row();
-
-                            ui.label("");
-
+                            if !compact { ui.end_row(); }
+                            if !compact { ui.label(""); }
                             ui.add_enabled_ui(editable, |ui| {
-
                                 ui.vertical(|ui| {
-
                                     ui.add(widgets::checkbox(&mut v.hide_menubar, tl!("Hide menu bar")));
-
                                     ui.add(widgets::checkbox(&mut v.hide_toolbar, tl!("Hide toolbars")));
-
                                     ui.add(widgets::checkbox(&mut v.hide_window_ui, tl!("Hide window controls")));
-
                                 });
-
                             });
-
-                            ui.end_row();
-
+                            if !compact { ui.end_row(); }
                         }
-
                         PropsTab::Security => match doc.security_summary() {
-
                             None => {
-
                                 row(ui, "Security method", tl!("No security").to_string());
-
                                 row(ui, "Restrictions", tl!("None — everything is allowed").to_string());
-
                                 if doc.allows_security_change() && ui.button(tl!("Protect using password…")).clicked() {
-
                                     link_command = Some("protect.password");
-
                                 }
-
                             }
-
                             Some(sec) => {
-
                                 row(ui, "Security method", tl!("Password security").to_string());
-
                                 row(ui, "Encryption", sec.method.clone());
-
                                 row(
-
                                     ui,
-
                                     "Opened with",
-
                                     if sec.pending {
-
                                         tl!("— (protection is applied when you save)").to_string()
-
                                     } else if sec.owner {
-
                                         tl!("Owner password (no restrictions apply)").to_string()
-
                                     } else {
-
                                         tl!("User password").to_string()
-
                                     },
-
                                 );
-
-
                                 if doc.allows_security_change() || doc.can_unlock() {
-
-                                    ui.horizontal(|ui| {
-
+                                    ui.horizontal_wrapped(|ui| {
                                         if doc.can_unlock() && ui.button(tl!("Unlock…")).clicked() {
-
                                             link_command = Some("protect.unlock");
-
                                         }
-
                                         if ui.button(tl!("Change settings…")).clicked() {
-
                                             link_command = Some("protect.password");
-
                                         }
-
                                         if ui.button(tl!("Remove security")).clicked() {
-
                                             link_command = Some("protect.remove");
-
                                         }
-
                                     });
-
                                 }
-
                                 let p = sec.permissions;
-
                                 let yes = |b: bool| tl!(if b { "Allowed" } else { "Not allowed" }).to_string();
-
                                 row(
-
                                     ui,
-
                                     "Printing",
-
                                     if !p.print() {
-
                                         tl!("Not allowed").to_string()
-
                                     } else if p.print_high_quality() {
-
                                         tl!("High resolution").to_string()
-
                                     } else {
-
                                         tl!("Low resolution").to_string()
-
                                     },
-
                                 );
-
                                 row(ui, "Changing the document", yes(p.modify()));
-
                                 row(ui, "Document assembly", yes(p.assemble()));
-
                                 row(ui, "Content copying", yes(p.copy()));
-
                                 row(ui, "Content copying for accessibility", yes(p.extract_for_accessibility()));
-
                                 row(ui, "Commenting", yes(p.annotate()));
-
                                 row(ui, "Filling of form fields", yes(p.fill_forms()));
-
                             }
-
                         },
-
                         PropsTab::Fonts => {
-
                             if i.fonts.is_empty() {
-
                                 row(ui, "Fonts", tl!("No fonts are referenced by the pages.").to_string());
-
                             }
-
                             for f in &i.fonts {
-
                                 let mut detail = f.kind.clone();
-
                                 if let Some(e) = &f.encoding {
-
                                     detail.push_str(&format!(" · {e}"));
-
                                 }
-
                                 detail.push_str(if f.subset {
-
                                     " · Embedded subset"
-
                                 } else if f.embedded {
-
                                     " · Embedded"
-
                                 } else {
-
                                     " · Not embedded (substituted)"
-
                                 });
-
                                 row(ui, &f.name, detail);
-
                             }
-
                         }
-
                         PropsTab::Advanced => {
-
+                            let yes = |b: bool| tl!(if b { "Yes" } else { "No" }).to_string();
                             row(ui, "PDF version", i.pdf_version.clone());
-
                             row(ui, "Location", crate::bidi::visual(doc.path.as_deref().unwrap_or_default()).into_owned());
-
                             row(ui, "File size", format!("{} ({})", human_size(i.file_size), crate::panels::byte_count(i.file_size)));
-
                             let p = &i.pages[0];
-
                             row(ui, "Page size", units.size(f64::from(p.width), f64::from(p.height)));
-
                             row(ui, "Number of pages", i.pages.len().to_string());
-
                             row(ui, "Tagged PDF", yes(i.tagged));
-
                             row(ui, "Form fields", i.fields.len().to_string());
-
                             row(ui, "Comments", i.annotations.len().to_string());
-
                             row(ui, "Layers", i.layers.len().to_string());
-
                             row(ui, "Attachments", i.attachments.len().to_string());
-
                             row(ui, "JavaScript", yes(i.has_javascript));
-
-
                             let ends = doc.revision_ends();
-
                             if ends.len() > 1 {
-
                                 ui.label(egui::RichText::new(tl!("Revisions")).color(t.text_muted));
-
                                 ui.horizontal_wrapped(|ui| {
-
                                     ui.label(ends.len().to_string());
-
                                     for n in (1..ends.len()).rev().take(12) {
-
                                         if ui
-
                                             .small_button(crate::i18n::fmt(tl!("View revision {n}"), &[("n", &n.to_string())]))
-
                                             .on_hover_text(tl!("Open the file as it was saved then"))
-
                                             .clicked()
-
                                         {
-
                                             open_revision = Some(n);
-
                                         }
-
                                     }
-
                                 });
-
-                                ui.end_row();
-
+                                if !compact { ui.end_row(); }
                             }
-
-
                             if let Some((_, v)) = app.view_draft.as_mut() {
-
                                 let editable = doc.allows_modification();
-
                                 ui.label(egui::RichText::new(tl!("Binding")).color(t.text_muted));
-
                                 ui.add_enabled_ui(editable, |ui| {
-
-                                    ui.horizontal(|ui| {
-
+                                    ui.horizontal_wrapped(|ui| {
                                         widgets::radio_value(ui, &mut v.right_to_left, false, tl!("Left Edge"));
-
                                         widgets::radio_value(ui, &mut v.right_to_left, true, tl!("Right Edge"));
-
                                     });
-
                                 });
-
-                                ui.end_row();
-
+                                if !compact { ui.end_row(); }
                                 let l = ui.label(egui::RichText::new(tl!("Language")).color(t.text_muted));
-
                                 let mut lang = v.language.clone().unwrap_or_default();
-
+                                let input_w = if compact { ui.available_width() } else { 160.0 };
                                 if ui
-
-                                    .add_enabled(editable, widgets::line(&mut lang).hint_text(tl!("e.g. en-US")).desired_width(160.0))
-
+                                    .add_enabled(editable, widgets::line(&mut lang).hint_text(tl!("e.g. en-US")).desired_width(input_w))
                                     .labelled_by(l.id)
-
                                     .changed()
-
                                 {
-
                                     v.language = (!lang.trim().is_empty()).then(|| lang.trim().to_string());
-
                                 }
-
-                                ui.end_row();
-
+                                if !compact { ui.end_row(); }
                             }
-
-
                             let repairs = doc.repair_log();
-
                             row(ui, "Repairs", if repairs.is_empty() { tl!("None").to_string() } else { repairs.len().to_string() });
-
                             if !repairs.is_empty() {
-
-                                ui.label("");
-
+                                if !compact { ui.label(""); }
                                 egui::CollapsingHeader::new(tl!("Repair log")).show(ui, |ui| {
-
                                     for r in &repairs {
-
                                         ui.add(egui::Label::new(egui::RichText::new(r).small()).wrap());
-
                                     }
-
                                 });
-
-                                ui.end_row();
-
+                                if !compact { ui.end_row(); }
                             }
-
                         }
-
-                    })
-
+                    };
+                    if compact {
+                        ui.vertical(&mut render_body);
+                    } else {
+                        egui::Grid::new("props").num_columns(2).spacing([18.0, 8.0]).min_col_width(140.0).show(ui, &mut render_body);
+                    }
                 });
 
             }
@@ -1472,8 +1219,7 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
             }
 
             Dialog::CertificateViewer => {
-
-                ui.set_width(700.0);
+                ui.set_width(700.0f32.min(max_w));
 
                 let trusted = app.session.trusted_certificates().to_vec();
 
@@ -1896,97 +1642,51 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
             }
 
             Dialog::ActionWizard => {
-
-                ui.set_width(620.0);
-
+                ui.set_width(620.0f32.min(max_w));
                 close = crate::actions_ui::body(ui, app, &t);
-
                 return;
-
             }
-
             Dialog::CompareFiles => {
-
                 let (go, cancel) = crate::compare_ui::body(ui, app, &t);
-
                 compare_now = go;
-
                 close = go || cancel;
-
                 return;
-
             }
-
             Dialog::JsConsole => {
-
-                ui.set_width(640.0);
-
+                ui.set_width(640.0f32.min(max_w));
                 close = crate::js_ui::console_body(ui, app, &t);
-
                 return;
-
             }
-
             Dialog::DocumentJs => {
-
-                ui.set_width(640.0);
-
+                ui.set_width(640.0f32.min(max_w));
                 close = crate::js_ui::document_js_body(ui, app, &t);
-
                 return;
-
             }
-
             Dialog::Preferences => {
-
-
                 let max = (ui.ctx().content_rect().height() - 120.0).max(200.0);
-
                 close = egui::ScrollArea::vertical().max_height(max).show(ui, |ui| crate::js_ui::preferences_body(ui, app, &t)).inner;
-
                 return;
-
             }
-
             Dialog::RecognizeText => {
-
                 let (go, cancel) = crate::ocr_ui::body(ui, app, &t);
-
                 ocr_now = go;
-
                 close = go || cancel;
-
                 return;
-
             }
-
             Dialog::AccessibilityOptions => {
-
                 let (start, cancel) = crate::a11y_ui::options_body(ui, app, &t);
-
                 a11y_now = start;
-
                 close = start || cancel;
-
                 return;
-
             }
-
             Dialog::Export(kind) => {
-
                 let (apply, cancel) = crate::export_ui::body(ui, app, &t, kind);
-
                 export_now = apply;
-
                 close = apply || cancel;
-
                 return;
-
             }
-
             Dialog::Marks(kind) => {
-
-                ui.set_width(720.0);
+                ui.set_width(720.0f32.min(max_w));
 
                 let (apply, cancel) = crate::marks_ui::body(ui, app, &t, kind);
 
@@ -2537,7 +2237,7 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
     #[cfg(not(target_arch = "wasm32"))]
 
-    if dialog == Dialog::OverwriteChanged && (modal.should_close() || close) {
+    if dialog == Dialog::OverwriteChanged && ((!just_opened && modal.should_close()) || close) {
 
         app.pending_overwrite = None;
 
@@ -2766,7 +2466,9 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
     let replaces = link_command.is_some_and(|c| c.starts_with("protect.")) || open_revision.is_some();
 
-    if modal.should_close() || close || replaces {
+    if (!just_opened && modal.should_close()) || close || replaces {
+
+        ctx.data_mut(|d| d.remove::<Dialog>(dialog_id));
 
         app.dialog = None;
 
@@ -3185,8 +2887,9 @@ fn full_screen_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let mut choice = None;
 
     let modal = widgets::show_modal(ctx, "full_screen_prompt", |ui| {
-
-        ui.set_width(460.0);
+        let max_w = (ui.ctx().content_rect().width() - 24.0).max(200.0);
+        ui.set_width(460.0f32.min(max_w));
+        ui.set_max_width(max_w);
 
         ui.horizontal(|ui| {
 
@@ -3308,11 +3011,7 @@ fn remote_link_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
 }
 
 
-fn yes(b: bool) -> String {
 
-    tl!(if b { "Yes" } else { "No" }).to_string()
-
-}
 
 
 
@@ -3349,10 +3048,14 @@ fn password_modal(
     let mut answer = None;
 
     let modal = widgets::show_modal(ctx, id, |ui| {
-
-        let max_w = (ui.ctx().content_rect().width() - 24.0).max(200.0);
-
-        ui.set_width(400.0f32.min(max_w));
+        let screen = ui.ctx().content_rect();
+        let max_w = if crate::layout_traits::is_compact_ctx(ui.ctx()) {
+            (screen.width() - 24.0).clamp(260.0, 400.0)
+        } else {
+            400.0f32.min((screen.width() - 24.0).max(200.0))
+        };
+        ui.set_width(max_w);
+        ui.set_max_width(max_w);
 
         ui.horizontal(|ui| {
 

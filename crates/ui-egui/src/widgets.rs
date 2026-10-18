@@ -21,52 +21,32 @@ const DIALOG_PAD_Y: i8 = 16;
 
 
 fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
-
     let t = Tokens::get(ctx);
-
+    let pad_x = if crate::layout_traits::is_compact_ctx(ctx) { 12 } else { DIALOG_PAD_X };
+    let pad_y = if crate::layout_traits::is_compact_ctx(ctx) { 12 } else { DIALOG_PAD_Y };
     egui::Frame::new()
-
         .fill(t.card)
-
         .stroke(Stroke::new(1.0, t.border))
-
         .corner_radius(CornerRadius::same(10))
-
-        .inner_margin(egui::Margin::symmetric(DIALOG_PAD_X, DIALOG_PAD_Y))
-
+        .inner_margin(egui::Margin::symmetric(pad_x, pad_y))
         .shadow(ctx.global_style().visuals.window_shadow)
-
 }
-
-
 
 pub fn modal(ctx: &egui::Context, id: impl std::hash::Hash + std::fmt::Debug) -> egui::Modal {
-
     egui::Modal::new(egui::Id::new(id)).frame(dialog_frame(ctx))
-
 }
 
-
-
 pub fn show_modal<R>(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut egui::Ui) -> R) -> egui::ModalResponse<R> {
-
     let stored = egui::Id::new(id);
-
+    let pad_x = if crate::layout_traits::is_compact_ctx(ctx) { 12 } else { DIALOG_PAD_X };
+    let pad_y = if crate::layout_traits::is_compact_ctx(ctx) { 12 } else { DIALOG_PAD_Y };
     modal(ctx, id).show(ctx, |ui| {
-
         begin_dialog(ui);
-
         let inner = content(ui);
-
-
-        let card = ui.min_rect().expand2(egui::vec2(f32::from(DIALOG_PAD_X), f32::from(DIALOG_PAD_Y)));
-
+        let card = ui.min_rect().expand2(egui::vec2(f32::from(pad_x), f32::from(pad_y)));
         ui.ctx().data_mut(|d| d.insert_temp(stored.with("card"), card));
-
         inner
-
     })
-
 }
 
 

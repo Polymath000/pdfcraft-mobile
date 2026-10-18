@@ -241,11 +241,8 @@ pub fn bottom_panel_margin(base_margin: Margin, ctx: &Context) -> Margin {
 
 
 #[inline]
-
 pub fn is_compact(ui: &Ui) -> bool {
-
-    ui.available_width() < COMPACT_BREAKPOINT
-
+    ui.available_width() < COMPACT_BREAKPOINT || is_mobile_os()
 }
 
 

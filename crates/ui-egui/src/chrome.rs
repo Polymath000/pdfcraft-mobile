@@ -1857,36 +1857,10 @@ pub fn mobile_top_header(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 }
 
 
-                ui.menu_button("…", |ui| {
-
-                    if ui.button(tl!("Document Properties")).clicked() {
-
-                        app.execute("file.properties");
-
-                        ui.close();
-
-                    }
-
-                    if ui.button(tl!("Preferences")).clicked() {
-
-                        app.dialog = Some(Dialog::Preferences);
-
-                        ui.close();
-
-                    }
-
-                    if ui.button(tl!("About PdfCraft")).clicked() {
-
-                        app.dialog = Some(Dialog::About);
-
-                        ui.close();
-
-                    }
-
-                });
-
+                if icons::button(ui, "ellipsis-vertical", 32.0, false, tl!("More options")).clicked() {
+                    app.more_sheet_open = !app.more_sheet_open;
+                }
             });
-
         });
 
 }
@@ -1930,112 +1904,77 @@ pub fn mobile_bottom_bar(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
         )
 
         .show(ui, |ui| {
-
             let total_w = ui.available_width();
-
-            let item_w = (total_w / 5.0).max(48.0);
-
             let has_doc = app.active.is_some();
-
-            ui.horizontal_centered(|ui| {
-
-                ui.spacing_mut().item_spacing.x = 0.0;
-
-
-                let is_read = app.mode == Mode::Read && app.right != Some(RightPanel::Pages) && app.right != Some(RightPanel::Search);
-
-                if nav_tab(ui, &t, "book-open", tl!("Read"), is_read, item_w).clicked() {
-
-                    app.select_mode(Mode::Read);
-
-                    app.choose_right_panel(None);
-
-                }
-
-
-                let is_tools = app.mode == Mode::Edit || app.mode == Mode::Sign || app.mode == Mode::Convert || app.mode == Mode::AllTools;
-
-                if nav_tab(ui, &t, "wrench", tl!("Tools"), is_tools, item_w).clicked() {
-
-                    if app.mode == Mode::Read {
-
-                        app.select_mode(Mode::Edit);
-
-                    } else if app.mode == Mode::Edit {
-
-                        app.select_mode(Mode::Sign);
-
-                    } else {
-
-                        app.select_mode(Mode::Edit);
-
+            if !has_doc {
+                let item_w = (total_w / 4.0).max(48.0);
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    if nav_tab(ui, &t, "home", tl!("Home"), true, item_w).clicked() {
+                        app.active = None;
                     }
-
-                    app.choose_right_panel(None);
-
-                }
-
-
-                let is_pages = app.right == Some(RightPanel::Pages);
-
-                if nav_tab(ui, &t, "layers", tl!("Pages"), is_pages, item_w).clicked() {
-
-                    if has_doc {
-
-                        if is_pages {
-
-                            app.choose_right_panel(None);
-
-                        } else {
-
-                            app.choose_right_panel(Some(RightPanel::Pages));
-
-                        }
-
+                    if nav_tab(ui, &t, "clock", tl!("Recent"), false, item_w).clicked() {
+                        app.active = None;
                     }
-
-                }
-
-
-                let is_search = app.right == Some(RightPanel::Search);
-
-                if nav_tab(ui, &t, "search", tl!("Search"), is_search, item_w).clicked() {
-
-                    if has_doc {
-
-                        if is_search {
-
-                            app.choose_right_panel(None);
-
-                        } else {
-
-                            app.choose_right_panel(Some(RightPanel::Search));
-
-                        }
-
+                    if nav_tab(ui, &t, "folder", tl!("Files"), false, item_w).clicked() {
+                        app.open_dialog();
                     }
+                    if nav_tab(ui, &t, "settings", tl!("Settings"), app.dialog == Some(crate::Dialog::Preferences), item_w).clicked() {
+                        app.dialog = Some(crate::Dialog::Preferences);
+                    }
+                });
+            } else {
+                let item_w = (total_w / 5.0).max(48.0);
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
 
-                }
-
-
-                let is_more = app.right == Some(RightPanel::Bookmarks) || app.right == Some(RightPanel::Comments);
-
-                if nav_tab(ui, &t, "menu", tl!("More"), is_more, item_w).clicked() {
-
-                    if is_more {
-
+                    let is_read = app.mode == Mode::Read && app.right != Some(RightPanel::Pages) && app.right != Some(RightPanel::Search) && !app.more_sheet_open;
+                    if nav_tab(ui, &t, "book-open", tl!("Read"), is_read, item_w).clicked() {
+                        app.select_mode(Mode::Read);
                         app.choose_right_panel(None);
-
-                    } else {
-
-                        app.choose_right_panel(Some(RightPanel::Bookmarks));
-
+                        app.more_sheet_open = false;
                     }
 
-                }
+                    let is_tools = (app.mode == Mode::Edit || app.mode == Mode::Sign || app.mode == Mode::Convert || app.mode == Mode::AllTools) && !app.more_sheet_open;
+                    if nav_tab(ui, &t, "wrench", tl!("Tools"), is_tools, item_w).clicked() {
+                        if app.mode == Mode::Read {
+                            app.select_mode(Mode::Edit);
+                        } else if app.mode == Mode::Edit {
+                            app.select_mode(Mode::Sign);
+                        } else {
+                            app.select_mode(Mode::Edit);
+                        }
+                        app.choose_right_panel(None);
+                        app.more_sheet_open = false;
+                    }
 
-            });
+                    let is_pages = app.right == Some(RightPanel::Pages) && !app.more_sheet_open;
+                    if nav_tab(ui, &t, "layers", tl!("Pages"), is_pages, item_w).clicked() {
+                        app.more_sheet_open = false;
+                        if is_pages {
+                            app.choose_right_panel(None);
+                        } else {
+                            app.choose_right_panel(Some(RightPanel::Pages));
+                        }
+                    }
 
+                    let is_search = app.right == Some(RightPanel::Search) && !app.more_sheet_open;
+                    if nav_tab(ui, &t, "search", tl!("Search"), is_search, item_w).clicked() {
+                        app.more_sheet_open = false;
+                        if is_search {
+                            app.choose_right_panel(None);
+                        } else {
+                            app.choose_right_panel(Some(RightPanel::Search));
+                        }
+                    }
+
+                    let is_more = app.more_sheet_open;
+                    if nav_tab(ui, &t, "menu", tl!("More"), is_more, item_w).clicked() {
+                        app.more_sheet_open = !app.more_sheet_open;
+                        app.choose_right_panel(None);
+                    }
+                });
+            }
         });
 
 }
@@ -2097,28 +2036,9 @@ pub fn show_doc_switcher(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let mut open_new = false;
 
 
-    egui::Area::new(egui::Id::new("doc_switcher_scrim"))
+    let insets = crate::layout_traits::safe_area_insets(ctx);
 
-        .order(egui::Order::Foreground)
-
-        .fixed_pos(screen.min)
-
-        .show(ctx, |ui| {
-
-            let (rect, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
-
-            ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(130));
-
-            if resp.clicked() {
-
-                close = true;
-
-            }
-
-        });
-
-
-    let sheet_h = (screen.height() * 0.65).clamp(260.0, 520.0);
+    let sheet_h = ((screen.height() * 0.65).clamp(260.0, 520.0) + insets.bottom).min(screen.height() - insets.top);
 
     let sheet_rect = Rect::from_min_size(
 
@@ -2127,6 +2047,28 @@ pub fn show_doc_switcher(app: &mut PdfCraftApp, ctx: &egui::Context) {
         vec2(screen.width(), sheet_h),
 
     );
+
+    let above_rect = Rect::from_min_max(screen.min, egui::pos2(screen.right(), sheet_rect.top()));
+
+    egui::Area::new(egui::Id::new("doc_switcher_scrim"))
+
+        .order(egui::Order::Foreground)
+
+        .fixed_pos(screen.min)
+
+        .show(ctx, |ui| {
+
+            ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(130));
+
+            let resp = ui.allocate_rect(above_rect, Sense::click());
+
+            if resp.clicked() {
+
+                close = true;
+
+            }
+
+        });
 
 
     egui::Area::new(egui::Id::new("doc_switcher_sheet"))
@@ -2147,13 +2089,13 @@ pub fn show_doc_switcher(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
                 .shadow(egui::Shadow { offset: [0, -4], blur: 20, spread: 0, color: Color32::from_black_alpha(100) })
 
-                .inner_margin(egui::Margin { left: 16, right: 16, top: 12, bottom: 16 })
+                .inner_margin(egui::Margin { left: 16, right: 16, top: 12, bottom: (insets.bottom as i8 + 16).max(16) })
 
                 .show(ui, |ui| {
 
                     ui.set_width(sheet_rect.width() - 32.0);
 
-                    ui.set_height(sheet_rect.height() - 28.0);
+                    ui.set_height(sheet_rect.height() - 28.0 - insets.bottom);
 
 
                     ui.vertical_centered(|ui| {
@@ -2349,6 +2291,135 @@ pub fn show_doc_switcher(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
     }
 
+}
+
+pub fn show_more_sheet(app: &mut PdfCraftApp, ctx: &egui::Context) {
+    if !app.more_sheet_open {
+        return;
+    }
+    let screen = ctx.content_rect();
+    let insets = crate::layout_traits::safe_area_insets(ctx);
+    let t = Tokens::get(ctx);
+    let mut close = false;
+    let has_doc = app.active.is_some();
+    let sheet_h = if has_doc {
+        (390.0f32 + insets.bottom).min(screen.height() * 0.75)
+    } else {
+        (240.0f32 + insets.bottom).min(screen.height() * 0.5)
+    };
+    let sheet_rect = Rect::from_min_size(
+        egui::pos2(screen.left(), screen.bottom() - sheet_h),
+        vec2(screen.width(), sheet_h),
+    );
+    let above_rect = Rect::from_min_max(screen.min, egui::pos2(screen.right(), sheet_rect.top()));
+
+    egui::Area::new(egui::Id::new("more_sheet_scrim"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(130));
+            let resp = ui.allocate_rect(above_rect, Sense::click());
+            if resp.clicked() {
+                close = true;
+            }
+        });
+
+    egui::Area::new(egui::Id::new("more_sheet_panel"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(sheet_rect.min)
+        .show(ctx, |ui| {
+            egui::Frame::NONE
+                .fill(t.chrome)
+                .corner_radius(CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 })
+                .stroke(Stroke::new(1.0, t.divider))
+                .shadow(egui::Shadow { offset: [0, -4], blur: 20, spread: 0, color: Color32::from_black_alpha(100) })
+                .inner_margin(egui::Margin { left: 16, right: 16, top: 12, bottom: (insets.bottom as i8 + 16).max(16) })
+                .show(ui, |ui| {
+                    ui.set_width(sheet_rect.width() - 32.0);
+                    ui.set_height(sheet_rect.height() - 28.0 - insets.bottom);
+
+                    ui.vertical_centered(|ui| {
+                        let handle_rect = Rect::from_center_size(ui.cursor().center() + vec2(0.0, 4.0), vec2(40.0, 4.0));
+                        ui.painter().rect_filled(handle_rect, CornerRadius::same(2), t.divider);
+                        ui.add_space(10.0);
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(tl!("More Actions")).font(theme::semibold(16.0)).color(t.text));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if icons::button(ui, "x", 28.0, false, tl!("Close")).clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    let action_row = |ui: &mut egui::Ui, icon: &str, label: &str| -> bool {
+                        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+                        let hover = resp.hovered();
+                        if hover {
+                            ui.painter().rect_filled(rect, CornerRadius::same(8), t.hover);
+                        }
+                        let icon_rect = Rect::from_center_size(rect.left_center() + vec2(20.0, 0.0), vec2(20.0, 20.0));
+                        icons::paint(ui, icon_rect, icon, 20.0, if hover { t.accent } else { t.text_muted });
+                        ui.painter().text(
+                            rect.left_center() + vec2(42.0, 0.0),
+                            Align2::LEFT_CENTER,
+                            label,
+                            theme::medium(14.0),
+                            t.text,
+                        );
+                        resp.clicked()
+                    };
+
+                    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                        if has_doc {
+                            if action_row(ui, "bookmark", tl!("Bookmarks")) {
+                                app.choose_right_panel(Some(RightPanel::Bookmarks));
+                                close = true;
+                            }
+                            if action_row(ui, "message-square", tl!("Comments & Annotations")) {
+                                app.choose_right_panel(Some(RightPanel::Comments));
+                                close = true;
+                            }
+                            if action_row(ui, "paperclip", tl!("Attachments")) {
+                                app.choose_right_panel(Some(RightPanel::Attachments));
+                                close = true;
+                            }
+                            if action_row(ui, "info", tl!("Document Properties")) {
+                                app.dialog = Some(crate::Dialog::Properties(crate::PropsTab::Description));
+                                close = true;
+                            }
+                            if action_row(ui, "share-2", tl!("Export / Convert…")) {
+                                app.run_command("file.export");
+                                close = true;
+                            }
+                            if action_row(ui, "printer", tl!("Print…")) {
+                                app.open_print();
+                                close = true;
+                            }
+                        } else {
+                            if action_row(ui, "folder", tl!("Open PDF…")) {
+                                app.open_dialog();
+                                close = true;
+                            }
+                            if action_row(ui, "settings", tl!("Preferences")) {
+                                app.dialog = Some(crate::Dialog::Preferences);
+                                close = true;
+                            }
+                            if action_row(ui, "info", tl!("About PdfCraft")) {
+                                app.dialog = Some(crate::Dialog::About);
+                                close = true;
+                            }
+                        }
+                    });
+                });
+        });
+
+    if close {
+        app.more_sheet_open = false;
+    }
 }
 
 

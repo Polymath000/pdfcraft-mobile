@@ -1,6 +1,3 @@
-//! Home tab: recommended tools, open card, pinned folders and recent files (local only, never
-//! another app's list).
-
 use egui::{Align2, CornerRadius, Rect, Sense, Stroke, vec2};
 use pdfcraft_engine::catalog;
 
@@ -9,7 +6,6 @@ use crate::{PdfCraftApp, icons, panels::human_size, widgets};
 
 const RECOMMENDED: [&str; 5] = ["organize", "comment", "form", "edit", "protect"];
 
-/// A soft shadow that rises on hover and settles when the card is pressed.
 fn card_lift(ui: &egui::Ui, t: &Tokens, rect: Rect, press: theme::Press) {
     let lift = press.hover * (1.0 - press.down);
     if lift > 0.04 {
@@ -22,8 +18,14 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let compact = crate::layout_traits::is_compact(ui);
     let horiz_margin = if compact { 14 } else { 36 };
+    let insets = crate::layout_traits::safe_area_insets(ui.ctx());
+    let bottom_margin = if compact {
+        (20.0 + crate::layout_traits::MOBILE_BOTTOM_BAR_HEIGHT + insets.bottom).round().min(127.0) as i8
+    } else {
+        20
+    };
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: horiz_margin, right: horiz_margin, top: 20, bottom: 20 }).show(ui, |ui| {
+        egui::Frame::NONE.inner_margin(egui::Margin { left: horiz_margin, right: horiz_margin, top: 20, bottom: bottom_margin }).show(ui, |ui| {
             ui.label(egui::RichText::new(tl!("Welcome to PdfCraft")).font(theme::semibold(24.0)));
             ui.label(
                 egui::RichText::new(tl!("An open-source PDF workbench — local, private, and scriptable."))
@@ -94,7 +96,6 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                                 .first()
                                 .map(|s| s.items.iter().take(3).map(|i| tl!(i.label)).collect::<Vec<_>>().join(" · "))
                                 .unwrap_or_default();
-                            // Fixed-height cards must leave room for their action in every language.
                             let mut job = egui::text::LayoutJob::simple(blurb.clone(), theme::regular(11.5), t.text_muted, body.width() - 28.0);
                             job.wrap.max_rows = 2;
                             let galley = ui.fonts_mut(|f| f.layout_job(job));
@@ -160,16 +161,13 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &r.name));
                 let press = theme::Press::track(ui, &resp);
-                // The row, not its response: the pointer stays "in" the row over its remove button.
                 let hovered = ui.rect_contains_pointer(rect);
                 if hovered && press.hover < 0.04 && press.down < 0.04 {
-                    // The remove button sits in the row, so the row response may not be hovered.
                     ui.painter().rect_filled(rect, CornerRadius::same(8), t.hover);
                 } else {
                     press.wash(ui, rect, 8, false);
                 }
                 if hovered {
-                    // Remove just this file from the list (#430); the file itself is untouched.
                     let x_rect = Rect::from_center_size(rect.right_center() - vec2(26.0, 0.0), vec2(28.0, 28.0));
                     let x = ui.interact(x_rect, ui.id().with(("remove-recent", &r.path)), Sense::click());
                     let label = crate::i18n::fmt(tl!("Remove {name} from Recent"), &[("name", &r.name)]);
@@ -190,7 +188,6 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     22.0,
                     egui::Color32::from_rgb(0xE0, 0x3E, 0x3E),
                 );
-                // Room on the right for the remove button.
                 let detail = ui.painter().text(
                     body.right_center() - vec2(48.0, 0.0),
                     Align2::RIGHT_CENTER,
@@ -198,7 +195,6 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     theme::regular(12.0),
                     t.text_muted,
                 );
-                // The name and path stop short of the page count; hovering shows the whole path.
                 let width = detail.left() - 16.0 - (body.left() + 46.0);
                 widgets::row_text(ui, body.min + vec2(46.0, 15.0), crate::bidi::visual(&r.name), theme::medium(13.5), t.text, width);
                 widgets::row_text(ui, body.min + vec2(46.0, 32.0), crate::bidi::visual(&r.path), theme::regular(11.0), t.text_faint, width);

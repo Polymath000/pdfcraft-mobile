@@ -942,6 +942,8 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
     let screen = ctx.content_rect();
 
+    let insets = crate::layout_traits::safe_area_insets(ctx);
+
     let t = Tokens::get(ctx);
 
     let scrim_id = egui::Id::new("compact_panel_scrim");
@@ -951,28 +953,7 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let mut close = false;
 
 
-    egui::Area::new(scrim_id)
-
-        .order(egui::Order::Foreground)
-
-        .fixed_pos(screen.min)
-
-        .show(ctx, |ui| {
-
-            let (rect, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
-
-            ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(130));
-
-            if resp.clicked() {
-
-                close = true;
-
-            }
-
-        });
-
-
-    let sheet_height = (screen.height() * 0.75).clamp(280.0, 640.0);
+    let sheet_height = ((screen.height() * 0.75).clamp(280.0, 640.0) + insets.bottom).min(screen.height() - insets.top);
 
     let sheet_rect = Rect::from_min_size(
 
@@ -981,6 +962,28 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
         vec2(screen.width(), sheet_height),
 
     );
+
+    let above_rect = Rect::from_min_max(screen.min, pos2(screen.right(), sheet_rect.top()));
+
+    egui::Area::new(scrim_id)
+
+        .order(egui::Order::Foreground)
+
+        .fixed_pos(screen.min)
+
+        .show(ctx, |ui| {
+
+            ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(130));
+
+            let resp = ui.allocate_rect(above_rect, Sense::click());
+
+            if resp.clicked() {
+
+                close = true;
+
+            }
+
+        });
 
 
     egui::Area::new(sheet_id)
@@ -1001,13 +1004,13 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
                 .shadow(egui::Shadow { offset: [0, -4], blur: 20, spread: 0, color: Color32::from_black_alpha(100) })
 
-                .inner_margin(egui::Margin { left: 16, right: 16, top: 10, bottom: 12 })
+                .inner_margin(egui::Margin { left: 16, right: 16, top: 10, bottom: (insets.bottom as i8 + 12).max(12) })
 
                 .show(ui, |ui| {
 
                     ui.set_width(sheet_rect.width() - 32.0);
 
-                    ui.set_height(sheet_rect.height() - 22.0);
+                    ui.set_height(sheet_rect.height() - 22.0 - insets.bottom);
 
                     ui.vertical_centered(|ui| {
 
@@ -1019,7 +1022,13 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
 
                     });
 
-                    right_panel(app, ui);
+                    let nav = right_panel(app, ui);
+
+                    if nav.is_some() {
+
+                        close = true;
+
+                    }
 
                 });
 
@@ -1035,6 +1044,7 @@ pub fn compact_panel(app: &mut PdfCraftApp, ctx: &egui::Context) {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Nav {
 
     Page(usize),
@@ -1046,13 +1056,13 @@ pub(crate) enum Nav {
 }
 
 
-pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) -> Option<Nav> {
 
     let t = Tokens::get(ui.ctx());
 
-    let Some((index, id)) = app.active_ids() else { return };
+    let Some((index, id)) = app.active_ids() else { return None; };
 
-    let Some(panel) = app.right else { return };
+    let Some(panel) = app.right else { return None; };
 
     let mut nav: Option<Nav> = None;
 
@@ -1082,12 +1092,11 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
 
     let bm_editable = app.session.get(id).is_some_and(|d| d.allows_assembly() && d.read_only_reason.is_none());
 
-
     let preparing = app.is_preparing();
 
     {
 
-        let Some(doc) = app.session.get(id) else { return };
+        let Some(doc) = app.session.get(id) else { return None; };
 
         let info = &doc.info;
 
@@ -1696,6 +1705,8 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
 
     }
 
+    nav
+
 }
 
 
@@ -2125,7 +2136,21 @@ fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut crate::DocVie
 
     }
 
-    let w = (ui.available_width() - 40.0).min(150.0);
+    let compact = crate::layout_traits::is_compact(ui);
+
+    let cols = if compact { 2 } else { 1 };
+
+    let gap = 12.0;
+
+    let w = if compact {
+
+        ((ui.available_width() - gap * (cols as f32 - 1.0) - 32.0) / (cols as f32)).clamp(100.0, 180.0)
+
+    } else {
+
+        (ui.available_width() - 40.0).min(150.0)
+
+    };
 
     let count = info.pages.len();
 
@@ -2133,171 +2158,189 @@ fn pages(ui: &mut egui::Ui, t: &Tokens, info: &DocInfo, view: &mut crate::DocVie
 
     let mut dropped = false;
 
-    for (i, p) in info.pages.iter().enumerate() {
+    let page_indices: Vec<usize> = (0..count).collect();
 
-        ui.vertical_centered(|ui| {
+    for chunk in page_indices.chunks(cols) {
 
-            let h = w * p.height / p.width.max(1.0);
+        ui.horizontal(|ui| {
 
-            let sense = if editable { Sense::click_and_drag() } else { Sense::click() };
+            if cols > 1 {
 
-            let (rect, resp) = ui.allocate_exact_size(vec2(w + 16.0, h + 16.0), sense);
-
-            rows.push(rect);
-
-            if rect.intersects(ui.clip_rect().expand(200.0)) {
-
-                view.need_thumbnail(i, rect.intersects(ui.clip_rect()));
+                ui.spacing_mut().item_spacing.x = gap;
 
             }
 
+            for &i in chunk {
 
-            if resp.drag_started_by(egui::PointerButton::Primary) {
+                let p = &info.pages[i];
 
-                if !view.target_pages().contains(&i) {
+                ui.vertical_centered(|ui| {
 
-                    view.click_page(i, egui::Modifiers::NONE, true);
+                    let h = w * p.height / p.width.max(1.0);
 
-                }
+                    let sense = if editable { Sense::click_and_drag() } else { Sense::click() };
 
-                view.panel_drag = Some(view.target_pages());
+                    let (rect, resp) = ui.allocate_exact_size(vec2(w + 16.0, h + 16.0), sense);
+
+                    rows.push(rect);
+
+                    if rect.intersects(ui.clip_rect().expand(200.0)) {
+
+                        view.need_thumbnail(i, rect.intersects(ui.clip_rect()));
+
+                    }
+
+
+                    if resp.drag_started_by(egui::PointerButton::Primary) {
+
+                        if !view.target_pages().contains(&i) {
+
+                            view.click_page(i, egui::Modifiers::NONE, true);
+
+                        }
+
+                        view.panel_drag = Some(view.target_pages());
+
+                    }
+
+                    if resp.drag_stopped() {
+
+                        dropped = true;
+
+                    }
+
+                    let page_info = crate::i18n::fmt(tl!("Page {label}"), &[("label", &p.label)]);
+
+                    let picked = view.selected.contains(&i);
+
+                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, picked, page_info.clone()));
+
+
+                    let selected = i == view.current;
+
+                    let press = theme::Press::track(ui, &resp);
+
+                    press.wash(ui, rect, 8, selected || picked);
+
+                    if picked {
+
+                        ui.painter().rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+
+                    }
+
+                    let pr = rect.translate(press.offset()).shrink(8.0);
+
+                    ui.painter().rect_filled(pr, CornerRadius::ZERO, Color32::WHITE);
+
+                    if let Some(tex) = view.thumb(i) {
+
+                        ui.painter().image(tex.id(), pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+
+                    }
+
+                    ui.painter().rect_stroke(
+
+                        pr,
+
+                        CornerRadius::ZERO,
+
+                        Stroke::new(if selected { 2.0 } else { 1.0 }, if selected { t.accent } else { t.border }),
+
+                        egui::StrokeKind::Outside,
+
+                    );
+
+                    ui.label(egui::RichText::new(&p.label).font(theme::medium(12.0)).color(if selected || picked { t.accent_text } else { t.text_muted }));
+
+                    let resp = theme::hand(resp);
+
+                    if resp.clicked() {
+
+                        let m = ui.input(|i| i.modifiers);
+
+                        if m.shift || m.command {
+
+                            view.click_page(i, m, true);
+
+                        } else {
+
+                            view.clear_page_selection(Some(i));
+
+                            *nav = Some(Nav::Page(i));
+
+                        }
+
+                    }
+
+                    resp.context_menu(|ui| {
+
+
+                        if !view.target_pages().contains(&i) {
+
+                            view.click_page(i, egui::Modifiers::NONE, true);
+
+                        }
+
+                        if ui.button(tl!("Extract pages")).clicked() {
+
+                            view.pending_action = Some(crate::canvas::ViewAction::Extract);
+
+                            ui.close();
+
+                        }
+
+                        if ui.add_enabled(editable, egui::Button::new(tl!("Replace pages…"))).clicked() {
+
+                            view.pending_action = Some(crate::canvas::ViewAction::ReplacePages);
+
+                            ui.close();
+
+                        }
+
+                        ui.separator();
+
+                        if ui.add_enabled(editable, egui::Button::new(tl!("Cut"))).clicked() {
+
+                            view.pending_action = Some(crate::canvas::ViewAction::CopyPages { cut: true });
+
+                            ui.close();
+
+                        }
+
+                        if ui.button(tl!("Copy")).clicked() {
+
+                            view.pending_action = Some(crate::canvas::ViewAction::CopyPages { cut: false });
+
+                            ui.close();
+
+                        }
+
+                        if ui.add_enabled(editable, egui::Button::new(tl!("Paste after"))).clicked() {
+
+                            view.pending_action = Some(crate::canvas::ViewAction::PastePages);
+
+                            ui.close();
+
+                        }
+
+                        ui.separator();
+
+                        let some_left = view.target_pages().len() < count;
+
+
+                        if ui.add_enabled(editable && some_left, egui::Button::new(tl!("Delete pages"))).clicked() {
+
+                            delete_pages(view, count);
+
+                            ui.close();
+
+                        }
+
+                    });
+
+                });
 
             }
-
-            if resp.drag_stopped() {
-
-                dropped = true;
-
-            }
-
-            let info = crate::i18n::fmt(tl!("Page {label}"), &[("label", &p.label)]);
-
-            let picked = view.selected.contains(&i);
-
-            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, picked, info.clone()));
-
-
-            let selected = i == view.current;
-
-            let press = theme::Press::track(ui, &resp);
-
-            press.wash(ui, rect, 8, selected || picked);
-
-            if picked {
-
-                ui.painter().rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
-
-            }
-
-            let pr = rect.translate(press.offset()).shrink(8.0);
-
-            ui.painter().rect_filled(pr, CornerRadius::ZERO, Color32::WHITE);
-
-            if let Some(tex) = view.thumb(i) {
-
-                ui.painter().image(tex.id(), pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-
-            }
-
-            ui.painter().rect_stroke(
-
-                pr,
-
-                CornerRadius::ZERO,
-
-                Stroke::new(if selected { 2.0 } else { 1.0 }, if selected { t.accent } else { t.border }),
-
-                egui::StrokeKind::Outside,
-
-            );
-
-            ui.label(egui::RichText::new(&p.label).font(theme::medium(12.0)).color(if selected || picked { t.accent_text } else { t.text_muted }));
-
-            let resp = theme::hand(resp);
-
-            if resp.clicked() {
-
-                let m = ui.input(|i| i.modifiers);
-
-                if m.shift || m.command {
-
-                    view.click_page(i, m, true);
-
-                } else {
-
-                    view.clear_page_selection(Some(i));
-
-                    *nav = Some(Nav::Page(i));
-
-                }
-
-            }
-
-            resp.context_menu(|ui| {
-
-
-                if !view.target_pages().contains(&i) {
-
-                    view.click_page(i, egui::Modifiers::NONE, true);
-
-                }
-
-                if ui.button(tl!("Extract pages")).clicked() {
-
-                    view.pending_action = Some(crate::canvas::ViewAction::Extract);
-
-                    ui.close();
-
-                }
-
-                if ui.add_enabled(editable, egui::Button::new(tl!("Replace pages…"))).clicked() {
-
-                    view.pending_action = Some(crate::canvas::ViewAction::ReplacePages);
-
-                    ui.close();
-
-                }
-
-                ui.separator();
-
-                if ui.add_enabled(editable, egui::Button::new(tl!("Cut"))).clicked() {
-
-                    view.pending_action = Some(crate::canvas::ViewAction::CopyPages { cut: true });
-
-                    ui.close();
-
-                }
-
-                if ui.button(tl!("Copy")).clicked() {
-
-                    view.pending_action = Some(crate::canvas::ViewAction::CopyPages { cut: false });
-
-                    ui.close();
-
-                }
-
-                if ui.add_enabled(editable, egui::Button::new(tl!("Paste after"))).clicked() {
-
-                    view.pending_action = Some(crate::canvas::ViewAction::PastePages);
-
-                    ui.close();
-
-                }
-
-                ui.separator();
-
-                let some_left = view.target_pages().len() < count;
-
-
-                if ui.add_enabled(editable && some_left, egui::Button::new(tl!("Delete pages"))).clicked() {
-
-                    delete_pages(view, count);
-
-                    ui.close();
-
-                }
-
-            });
 
         });
 

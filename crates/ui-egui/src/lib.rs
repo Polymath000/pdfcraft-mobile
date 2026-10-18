@@ -281,6 +281,8 @@ mod widgets;
 
 pub mod window_controls;
 
+pub mod tool_ribbon;
+
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 
@@ -955,6 +957,8 @@ pub struct PdfCraftApp {
 
     pub doc_switcher_open: bool,
 
+    pub more_sheet_open: bool,
+
 
     pub update_source: Option<updates::UpdateSource>,
 
@@ -1576,6 +1580,8 @@ impl PdfCraftApp {
             mobile_picker: None,
 
             doc_switcher_open: false,
+
+            more_sheet_open: false,
 
             update_source: None,
 
@@ -5107,6 +5113,14 @@ impl PdfCraftApp {
 
             }
 
+            if self.more_sheet_open {
+
+                self.more_sheet_open = false;
+
+                return;
+
+            }
+
             if self.right.is_some() {
 
                 self.choose_right_panel(None);
@@ -5751,6 +5765,8 @@ impl eframe::App for PdfCraftApp {
             chrome::mobile_bottom_bar(self, ui);
 
             chrome::show_doc_switcher(self, &ctx);
+
+            chrome::show_more_sheet(self, &ctx);
 
             if self.right.is_some() {
 

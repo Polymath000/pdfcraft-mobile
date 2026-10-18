@@ -368,7 +368,7 @@ impl MobileFilePicker {
         let mut nav_up = false;
 
 
-        widgets::show_modal(ctx, "mobile_file_picker", |ui| {
+        let modal = widgets::show_modal(ctx, "mobile_file_picker", |ui| {
 
             ui.set_width(modal_width);
 
@@ -386,7 +386,7 @@ impl MobileFilePicker {
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
 
-                    if icons::button(ui, "x", 28.0, false, tl!("Close")).clicked() {
+                    if icons::button(ui, "x", 36.0, false, tl!("Close")).clicked() {
 
                         *close = true;
 
@@ -1010,6 +1010,15 @@ impl MobileFilePicker {
 
         });
 
+        let picker_id = egui::Id::new("picker_just_opened");
+        let was_open: bool = ctx.data(|d| d.get_temp(picker_id)).unwrap_or(false);
+        ctx.data_mut(|d| d.insert_temp(picker_id, true));
+        if was_open && modal.should_close() {
+            *close = true;
+            ctx.data_mut(|d| d.remove::<bool>(picker_id));
+        } else if *close {
+            ctx.data_mut(|d| d.remove::<bool>(picker_id));
+        }
 
         if nav_up {
 

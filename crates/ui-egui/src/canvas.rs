@@ -3975,7 +3975,19 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
 
     {
 
-        f.in_panel = false;
+        if crate::layout_traits::is_compact(ui) {
+
+            if f.query.is_empty() {
+
+                app.views[index].find = None;
+
+            }
+
+        } else {
+
+            f.in_panel = false;
+
+        }
 
     }
 
@@ -5289,7 +5301,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
 
                 use crate::forms_ui::FieldPointer;
 
-                let field = if tool == QuickTool::Select
+                let field = if matches!(tool, QuickTool::Select | QuickTool::Hand)
 
                     && !(editing_content && can_modify && crate::content_ui::select_grabs(ui, &xf, i, info, &added, view))
 
@@ -7407,9 +7419,10 @@ fn page_size_hint(view: &DocView, info: &DocInfo, units: crate::units::Unit, are
 
 
 fn find_bar(view: &mut DocView, pages: usize, area: Rect, ui: &mut egui::Ui, t: &Tokens) {
-
+    if crate::layout_traits::is_compact(ui) {
+        return;
+    }
     let Some(find) = view.find.as_mut() else { return };
-
 
     if find.in_panel {
 
@@ -8418,110 +8431,153 @@ fn organize_toolbar(view: &mut DocView, info: &DocInfo, editable: bool, dirty: b
 
     let (first, last) = (targets.first().copied().unwrap_or(0), targets.last().copied().unwrap_or(0));
 
-    egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(16, 8)).show(ui, |ui| {
+    let compact = crate::layout_traits::is_compact(ui);
 
-        ui.horizontal(|ui| {
+    egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(if compact { 8 } else { 16 }, 8)).show(ui, |ui| {
 
-            ui.spacing_mut().item_spacing.x = 4.0;
+        if compact {
 
-            let label = match view.selected.len() {
+            ui.horizontal(|ui| {
 
-                0 => crate::i18n::fmt(tl!("Page {p} of {n}"), &[("p", &(view.current + 1).to_string()), ("n", &n.to_string())]),
+                let label = match view.selected.len() {
 
-                1 => tl!("1 page selected").to_string(),
+                    0 => crate::i18n::fmt(tl!("Page {p} of {n}"), &[("p", &(view.current + 1).to_string()), ("n", &n.to_string())]),
 
-                k => crate::i18n::fmt(tl!("{n} pages selected"), &[("n", &k.to_string())]),
+                    1 => tl!("1 page selected").to_string(),
 
-            };
+                    k => crate::i18n::fmt(tl!("{n} pages selected"), &[("n", &k.to_string())]),
 
+                };
 
-            ui.add_sized([150.0, 30.0], egui::Label::new(egui::RichText::new(label).font(theme::medium(13.0)).color(t.text_muted)).truncate());
+                ui.label(egui::RichText::new(label).font(theme::medium(13.0)).color(t.text_muted));
 
-            ui.add_enabled_ui(editable, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 
-                ui.add_space(8.0);
+                    if widgets::ghost_button(ui, "x", tl!("Close")).clicked() {
 
-                if ui.add_enabled_ui(first > 0, |ui| icons::button(ui, "chevron-left", 30.0, false, tl!("Move earlier"))).inner.clicked() {
+                        view.organize = false;
 
-                    view.pending_edit = Some(Edit::MovePages { pages: targets.clone(), to: first - 1 });
+                    }
 
-                }
+                    if dirty {
 
-                if ui.add_enabled_ui(last + 1 < n, |ui| icons::button(ui, "chevron-right", 30.0, false, tl!("Move later"))).inner.clicked() {
+                        let save = widgets::pill_button(ui, tl!("Save"), true);
 
-                    view.pending_edit = Some(Edit::MovePages { pages: targets.clone(), to: first + 1 });
+                        if save.clicked() {
 
-                }
+                            view.pending_action = Some(ViewAction::Save);
 
-            });
+                        }
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    }
 
-                if widgets::ghost_button(ui, "x", tl!("Close")).on_hover_text(tl!("Back to the document")).clicked() {
-
-                    view.organize = false;
-
-                }
-
-
-                let save = ui.add_enabled_ui(dirty, |ui| widgets::pill_button(ui, tl!("Save pages"), true)).inner;
-
-                if save.on_hover_text(tl!("Save these pages as one PDF")).on_disabled_hover_text(tl!("No changes to save")).clicked() {
-
-                    view.pending_action = Some(ViewAction::Save);
-
-                }
-
-                ui.add_space(8.0);
-
-
-                let zoom = view.grid_zoom;
-
-                if ui
-
-                    .add_enabled_ui(zoom < *GRID_ZOOM_RANGE.end(), |ui| icons::button(ui, "zoom-in", 30.0, false, tl!("Larger pages")))
-
-                    .inner
-
-                    .clicked()
-
-                {
-
-                    view.grid_zoom_request = Some(zoom * GRID_ZOOM_STEP);
-
-                }
-
-                let percent = egui::Button::new(egui::RichText::new(format!("{:.0}%", zoom * 100.0)).font(theme::medium(12.0)).color(t.text_muted))
-
-                    .frame(false);
-
-                let percent = ui.add_sized([44.0, 30.0], percent);
-
-                percent.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Reset page size")));
-
-                if percent.on_hover_text(tl!("Reset page size")).clicked() {
-
-                    view.grid_zoom_request = Some(1.0);
-
-                }
-
-                if ui
-
-                    .add_enabled_ui(zoom > *GRID_ZOOM_RANGE.start(), |ui| icons::button(ui, "zoom-out", 30.0, false, tl!("Smaller pages")))
-
-                    .inner
-
-                    .clicked()
-
-                {
-
-                    view.grid_zoom_request = Some(zoom / GRID_ZOOM_STEP);
-
-                }
+                });
 
             });
 
-        });
+        } else {
+
+            ui.horizontal(|ui| {
+
+                ui.spacing_mut().item_spacing.x = 4.0;
+
+                let label = match view.selected.len() {
+
+                    0 => crate::i18n::fmt(tl!("Page {p} of {n}"), &[("p", &(view.current + 1).to_string()), ("n", &n.to_string())]),
+
+                    1 => tl!("1 page selected").to_string(),
+
+                    k => crate::i18n::fmt(tl!("{n} pages selected"), &[("n", &k.to_string())]),
+
+                };
+
+                ui.add_sized([150.0, 30.0], egui::Label::new(egui::RichText::new(label).font(theme::medium(13.0)).color(t.text_muted)).truncate());
+
+                ui.add_enabled_ui(editable, |ui| {
+
+                    ui.add_space(8.0);
+
+                    if ui.add_enabled_ui(first > 0, |ui| icons::button(ui, "chevron-left", 30.0, false, tl!("Move earlier"))).inner.clicked() {
+
+                        view.pending_edit = Some(Edit::MovePages { pages: targets.clone(), to: first - 1 });
+
+                    }
+
+                    if ui.add_enabled_ui(last + 1 < n, |ui| icons::button(ui, "chevron-right", 30.0, false, tl!("Move later"))).inner.clicked() {
+
+                        view.pending_edit = Some(Edit::MovePages { pages: targets.clone(), to: first + 1 });
+
+                    }
+
+                });
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+
+                    if widgets::ghost_button(ui, "x", tl!("Close")).on_hover_text(tl!("Back to the document")).clicked() {
+
+                        view.organize = false;
+
+                    }
+
+                    let save = ui.add_enabled_ui(dirty, |ui| widgets::pill_button(ui, tl!("Save pages"), true)).inner;
+
+                    if save.on_hover_text(tl!("Save these pages as one PDF")).on_disabled_hover_text(tl!("No changes to save")).clicked() {
+
+                        view.pending_action = Some(ViewAction::Save);
+
+                    }
+
+                    ui.add_space(8.0);
+
+                    let zoom = view.grid_zoom;
+
+                    if ui
+
+                        .add_enabled_ui(zoom < *GRID_ZOOM_RANGE.end(), |ui| icons::button(ui, "zoom-in", 30.0, false, tl!("Larger pages")))
+
+                        .inner
+
+                        .clicked()
+
+                    {
+
+                        view.grid_zoom_request = Some(zoom * GRID_ZOOM_STEP);
+
+                    }
+
+                    let percent = egui::Button::new(egui::RichText::new(format!("{:.0}%", zoom * 100.0)).font(theme::medium(12.0)).color(t.text_muted))
+
+                        .frame(false);
+
+                    let percent = ui.add_sized([44.0, 30.0], percent);
+
+                    percent.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Reset page size")));
+
+                    if percent.on_hover_text(tl!("Reset page size")).clicked() {
+
+                        view.grid_zoom_request = Some(1.0);
+
+                    }
+
+                    if ui
+
+                        .add_enabled_ui(zoom > *GRID_ZOOM_RANGE.start(), |ui| icons::button(ui, "zoom-out", 30.0, false, tl!("Smaller pages")))
+
+                        .inner
+
+                        .clicked()
+
+                    {
+
+                        view.grid_zoom_request = Some(zoom / GRID_ZOOM_STEP);
+
+                    }
+
+                });
+
+            });
+
+        }
 
     });
 

@@ -259,7 +259,9 @@ pub(crate) fn page_input(
 
     }
 
-    if !resp.clicked() {
+    let clicked = resp.clicked() || (touch_mode && ui.input(|i| i.pointer.primary_released()) && !ui.input(|i| i.pointer.is_decidedly_dragging()));
+
+    if !clicked {
 
         return if resp.is_pointer_button_down_on() { FieldPointer::Owned } else { FieldPointer::Over };
 

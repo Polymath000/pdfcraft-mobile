@@ -16,79 +16,46 @@ const CONTEXT: usize = 36;
 
 
 pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: usize) {
-
     crate::widgets::begin_dialog(ui);
-
     let searched = view.texts.len() + view.text_failed.len();
-
+    let is_first_open = view.find.is_none();
     let rerun_needed = {
-
-        let Some(find) = view.find.as_mut() else { return };
-
+        let find = view.find.get_or_insert_with(Default::default);
         find.in_panel = true;
-
-        let l = ui.label(egui::RichText::new(tl!("What word or phrase would you like to search for?")).color(t.text_muted));
-
-        let mut clear_clicked = false;
-
-        ui.horizontal(|ui| {
-
-            let input_w = if find.query.is_empty() { ui.available_width() } else { ui.available_width() - 36.0 };
-
-            let r = ui
-
-                .add_sized([input_w, 32.0], crate::widgets::line(&mut find.query).id(egui::Id::new("search-panel-input")).hint_text(tl!("Search")))
-
-                .labelled_by(l.id);
-
-            if find.focus {
-
-                r.request_focus();
-
-                r.scroll_to_me(Some(egui::Align::Center));
-
-                find.focus = false;
-
-            }
-
-            if !find.query.is_empty() && icons::button(ui, "x", 28.0, false, tl!("Clear search")).clicked() {
-
-                clear_clicked = true;
-
-            }
-
-        });
-
-        if clear_clicked {
-
-            find.query.clear();
-
-            find.case_query.clear();
-
+        if is_first_open {
+            find.focus = true;
         }
-
+        let l = ui.label(egui::RichText::new(tl!("What word or phrase would you like to search for?")).color(t.text_muted));
+        let mut clear_clicked = false;
         ui.horizontal(|ui| {
-
-            let w = &mut ui.visuals_mut().widgets;
-
-            w.inactive.bg_stroke = egui::Stroke::new(1.0, t.border);
-
-            w.inactive.bg_fill = t.hover;
-
-            let a = ui.add(widgets::checkbox(&mut find.whole_words, tl!("Whole words only"))).changed();
-
-            let b = ui.add(widgets::checkbox(&mut find.case_sensitive, tl!("Case-sensitive"))).changed();
-
-            if a || b {
-
-                find.case_query.clear();
-
+            let input_w = if find.query.is_empty() { ui.available_width() } else { ui.available_width() - 36.0 };
+            let r = ui
+                .add_sized([input_w, 32.0], crate::widgets::line(&mut find.query).id(egui::Id::new("search-panel-input")).hint_text(tl!("Search")))
+                .labelled_by(l.id);
+            if find.focus {
+                r.request_focus();
+                r.scroll_to_me(Some(egui::Align::Center));
+                find.focus = false;
             }
-
+            if !find.query.is_empty() && icons::button(ui, "x", 28.0, false, tl!("Clear search")).clicked() {
+                clear_clicked = true;
+            }
         });
-
+        if clear_clicked {
+            find.query.clear();
+            find.case_query.clear();
+        }
+        ui.horizontal_wrapped(|ui| {
+            let w = &mut ui.visuals_mut().widgets;
+            w.inactive.bg_stroke = egui::Stroke::new(1.0, t.border);
+            w.inactive.bg_fill = t.hover;
+            let a = ui.add(widgets::checkbox(&mut find.whole_words, tl!("Whole words only"))).changed();
+            let b = ui.add(widgets::checkbox(&mut find.case_sensitive, tl!("Case-sensitive"))).changed();
+            if a || b {
+                find.case_query.clear();
+            }
+        });
         clear_clicked || find.query != find.case_query
-
     };
 
     if rerun_needed {

@@ -1,7 +1,3 @@
-//! The About window's credits: every contributor (GitHub login always; display and real names only
-//! with recorded consent) and the AI models that helped. The tables are baked into the binary by
-//! build.rs from contributors/contributors.json (craftrules standards/contributors.md); nothing is
-//! read at run time.
 
 use std::cmp::Ordering;
 
@@ -9,10 +5,8 @@ use egui::RichText;
 
 use crate::theme::Tokens;
 
-/// The About dialog is a modal that sizes to its content; the lists scroll inside this height.
 const LIST_HEIGHT: f32 = 380.0;
 
-/// English lookup keys for the model table, also checked by catalog coverage tests.
 pub const MODEL_COLUMNS: [&str; 6] = ["Company", "Model", "Version", "Commits", "% of all commits", "Lines +/−"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,7 +20,6 @@ pub struct Contributor {
     pub lines_deleted: u64,
     pub binary_added: u64,
     pub binary_deleted: u64,
-    /// ISO 8601 UTC; empty for someone credited only through a merged PR.
     pub first_commit: &'static str,
     pub last_commit: &'static str,
 }
@@ -43,7 +36,6 @@ pub struct Model {
 
 include!(concat!(env!("OUT_DIR"), "/credits.rs"));
 
-/// Which name to show. Display and real names fall back to the `@username` when not given.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NameMode {
     #[default]
@@ -93,7 +85,6 @@ impl SortKey {
         SortKey::LastCommit,
     ];
 
-    /// Menu label and table header.
     pub fn label(self) -> (&'static str, &'static str) {
         match self {
             SortKey::Name => ("Name (A–Z)", "Name"),
@@ -109,7 +100,6 @@ impl SortKey {
         }
     }
 
-    /// Names and dates read naturally oldest/A first; counts read biggest first.
     pub fn default_ascending(self) -> bool {
         matches!(self, SortKey::Name | SortKey::FirstCommit | SortKey::LastCommit)
     }
@@ -129,7 +119,6 @@ impl Contributor {
         i128::from(self.lines_added) - i128::from(self.lines_deleted)
     }
 
-    /// One line with everything we know, for tooltips.
     pub fn summary(&self) -> String {
         let prs = group(self.prs);
         let commits = group(self.commits);
@@ -158,7 +147,6 @@ impl Contributor {
     }
 }
 
-/// Alphabetical key: case-insensitive, ignoring the `@` of usernames.
 fn name_key(name: &str) -> String {
     name.trim_start_matches('@').to_lowercase()
 }
@@ -173,7 +161,6 @@ fn compare(a: &Contributor, b: &Contributor, mode: NameMode, key: SortKey) -> Or
         SortKey::LinesDelta => a.lines_delta().cmp(&b.lines_delta()),
         SortKey::BinaryAdded => a.binary_added.cmp(&b.binary_added),
         SortKey::BinaryDeleted => a.binary_deleted.cmp(&b.binary_deleted),
-        // A PR-only contributor (no commit date) sorts after everyone with a date.
         SortKey::FirstCommit => dated(a.first_commit).cmp(&dated(b.first_commit)),
         SortKey::LastCommit => dated(a.last_commit).cmp(&dated(b.last_commit)),
     }
@@ -183,7 +170,6 @@ fn dated(d: &str) -> (bool, &str) {
     (d.is_empty(), d)
 }
 
-/// Contributors in display order. Ties fall back to the name (A–Z) so the order is stable.
 pub fn sorted(list: &[Contributor], mode: NameMode, key: SortKey, ascending: bool) -> Vec<&Contributor> {
     let mut v: Vec<&Contributor> = list.iter().collect();
     v.sort_by(|a, b| {
@@ -229,38 +215,39 @@ impl Default for View {
     }
 }
 
-/// About ▸ Contributors: a name toggle, a sort, and the list as a grab bag or a table.
 pub fn contributors_ui(ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let id = egui::Id::new("credits_view");
     let mut v = ui.data_mut(|d| d.get_temp::<View>(id)).unwrap_or_default();
-    ui.horizontal_wrapped(|ui| {
-        ui.label(crate::i18n::t("Show"));
-        for m in NameMode::ALL {
-            if ui.selectable_label(v.names == m, crate::i18n::t(m.label())).clicked() {
-                v.names = m;
-            }
-        }
-        ui.separator();
-        ui.label(crate::i18n::t("Sort"));
-        egui::ComboBox::from_id_salt("credits_sort").selected_text(crate::i18n::t(v.key.label().0)).show_ui(ui, |ui| {
-            for k in SortKey::ALL {
-                if ui.selectable_label(v.key == k, crate::i18n::t(k.label().0)).clicked() {
-                    v.key = k;
-                    v.ascending = k.default_ascending();
+    egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(crate::i18n::t("Show"));
+            for m in NameMode::ALL {
+                if ui.selectable_label(v.names == m, crate::i18n::t(m.label())).clicked() {
+                    v.names = m;
                 }
             }
+            ui.separator();
+            ui.label(crate::i18n::t("Sort"));
+            egui::ComboBox::from_id_salt("credits_sort").selected_text(crate::i18n::t(v.key.label().0)).show_ui(ui, |ui| {
+                for k in SortKey::ALL {
+                    if ui.selectable_label(v.key == k, crate::i18n::t(k.label().0)).clicked() {
+                        v.key = k;
+                        v.ascending = k.default_ascending();
+                    }
+                }
+            });
+            if ui.button(if v.ascending { "▲" } else { "▼" }).on_hover_text(crate::i18n::t("Reverse the order")).clicked() {
+                v.ascending = !v.ascending;
+            }
+            ui.separator();
+            if ui.selectable_label(!v.table, crate::i18n::t("Grab bag")).clicked() {
+                v.table = false;
+            }
+            if ui.selectable_label(v.table, crate::i18n::t("Table")).clicked() {
+                v.table = true;
+            }
         });
-        if ui.button(if v.ascending { "▲" } else { "▼" }).on_hover_text(crate::i18n::t("Reverse the order")).clicked() {
-            v.ascending = !v.ascending;
-        }
-        ui.separator();
-        if ui.selectable_label(!v.table, crate::i18n::t("Grab bag")).clicked() {
-            v.table = false;
-        }
-        if ui.selectable_label(v.table, crate::i18n::t("Table")).clicked() {
-            v.table = true;
-        }
     });
     let list = sorted(CONTRIBUTORS, v.names, v.key, v.ascending);
     let counts = crate::i18n::fmt(crate::i18n::t("{n} contributors · {c} commits"), &[("n", &list.len().to_string()), ("c", &group(TOTAL_COMMITS))]);
@@ -319,7 +306,6 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
     });
 }
 
-/// About ▸ Models: AI models credited in Co-Authored-By trailers.
 pub fn models_ui(ui: &mut egui::Ui) {
     if MODELS.is_empty() {
         ui.label(crate::i18n::t("No model credits were built into this copy."));
@@ -399,9 +385,9 @@ mod tests {
         let v = sorted(&all, NameMode::Username, SortKey::Name, true);
         assert_eq!(logins(&v), ["alice", "Bob", "carol", "zed"]);
         let v = sorted(&all, NameMode::DisplayName, SortKey::Name, true);
-        assert_eq!(logins(&v), ["alice", "Bob", "carol", "zed"]); // "Ann" sorts with the @usernames
+        assert_eq!(logins(&v), ["alice", "Bob", "carol", "zed"]);
         let v = sorted(&all, NameMode::RealName, SortKey::Name, false);
-        assert_eq!(logins(&v), ["zed", "carol", "Bob", "alice"]); // "Dana" between bob and zed
+        assert_eq!(logins(&v), ["zed", "carol", "Bob", "alice"]);
     }
 
     #[test]
@@ -410,7 +396,7 @@ mod tests {
         let v = sorted(&all, NameMode::Username, SortKey::LinesDelta, false);
         assert_eq!(logins(&v), ["Bob", "alice", "carol", "zed"]);
         let v = sorted(&all, NameMode::Username, SortKey::FirstCommit, true);
-        assert_eq!(logins(&v), ["Bob", "zed", "carol", "alice"]); // undated last
+        assert_eq!(logins(&v), ["Bob", "zed", "carol", "alice"]);
     }
 
     #[test]
